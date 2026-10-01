@@ -6,13 +6,11 @@
 
 <p align="center">
 
-&#x20; # ====== 中文不易，多加努力 ：）======
+&#x20; # ======= 中文不易，多加努力 ：）=======
 
 </p>
 
-
-
-<br><br>
+<br>
 
 
 
@@ -22,7 +20,11 @@
 
 
 
-&#x20; pyinstaller --onedir --noconsole pinyin\_core.py <br>
+&#x20; pyinstaller --onedir --noconsole pinyin\_core.py
+
+
+
+<br>
 
 
 
