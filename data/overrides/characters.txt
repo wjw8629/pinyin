@@ -1,5 +1,0 @@
-# Project-specific character overrides.
-# Format:
-# character<TAB>pinyin
-#
-# Add one pronunciation per line when needed.

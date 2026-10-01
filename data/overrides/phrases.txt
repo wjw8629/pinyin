@@ -1,7 +1,0 @@
-# Project-specific phrase overrides.
-# Format:
-# phrase<TAB>pinyin
-#
-# Add one pronunciation per line when a phrase has a known preferred reading.
-# Example:
-# 银行	yín háng
