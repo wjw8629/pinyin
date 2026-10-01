@@ -39,7 +39,10 @@ def main():
         results = []
         for char in text:
             if '\u4e00' <= char <= '\u9fa5':
-                py_list = pinyin(char, style=Style.NORMAL)
+                # =================== 关键修改点 ===================
+                # 将 Style.NORMAL 修改为 Style.TONE 以重新显示声调
+                py_list = pinyin(char, style=Style.TONE)
+                # =================================================
                 py = py_list[0][0] if (py_list and py_list[0]) else ""
             else:
                 py = ""
