@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "dictionary": "dictionary.tsv",
+  "encoding": "UTF-8",
+  "phrase_count": 47111,
+  "character_count": 0,
+  "sources": {
+    "character": "https://raw.githubusercontent.com/mozillazg/pinyin-data/master/pinyin.txt",
+    "phrase": "https://raw.githubusercontent.com/mozillazg/phrase-pinyin-data/master/pinyin.txt"
+  },
+  "sha256": "63b7e9ec8759620ca0b91327c3fd36c2da0f48591046d3e5834572fe7b4c812b"
+}
