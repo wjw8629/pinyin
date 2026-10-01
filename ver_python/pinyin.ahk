@@ -8,6 +8,7 @@ global G_UserTyped := []
 global PracticeGui := ""      
 global WB := ""               
 global SaveFile := A_ScriptDir "\progress_save.ini" 
+global DictFile := A_ScriptDir "\custom_pinyin.txt"  ; Custom pinyin dictionary path
 global G_PinyinOnlyMode := false            
 
 ; --- 【UI Optimization】Redistributed heights to grant Web Layout more room ---
@@ -30,6 +31,12 @@ InitMainProgram()
 InitMainProgram() {
     savedText := ""
     savedBuffer := ""
+    
+    ; 🚀 Auto-Generate Dictionary File if Missing
+    if !FileExist(DictFile) {
+        defaultContent := "不易=bu2,yi4"
+        FileAppend(defaultContent, DictFile, "UTF-8")
+    }
     
     if FileExist(SaveFile) {
         try {
@@ -60,15 +67,14 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
         MsgBox("请输入一些文字后再开始练习哦！", "提示")
         return
     }
-    ;替换下面几个路径
-    ;inputTemp := A_ScriptDir "\dist\input_temp.txt"
-    ;outputTemp := A_ScriptDir "\dist\output_temp.txt"
-    ;pyScript := A_ScriptDir "\dist\pinyin_core\pinyin_core.exe"
+
     inputTemp := A_ScriptDir "\input_temp.txt"
     outputTemp := A_ScriptDir "\output_temp.txt"
     pyScript := A_ScriptDir "\pinyin_core.py"
+    ;inputTemp := A_ScriptDir "\dist\input_temp.txt"
+    ;outputTemp := A_ScriptDir "\dist\output_temp.txt"
+    ;pyScript := A_ScriptDir "\dist\pinyin_core\pinyin_core.exe"
 
-    
     if (!FileExist(pyScript)) {
         MsgBox("未在当前目录下找到 [pinyin_core.py] 脚本！`n请确保它与 AHK 脚本放在同一文件夹。", "错误")
         return
@@ -80,10 +86,8 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
         FileDelete(outputTemp)
         
     FileAppend(inputText, inputTemp, "UTF-8")
-    ; 替换
     RunWait(A_ComSpec ' /c python "' pyScript '"', A_ScriptDir, "Hide")
     ;RunWait('"' pyScript '"', A_ScriptDir, "Hide")
-
     
     if (!FileExist(outputTemp)) {
         MsgBox("Python 转译引擎未响应，请确保环境正常并安装了 pypinyin 库。", "转译失败")
@@ -97,6 +101,7 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
     global G_UserTyped := [] 
     
     Pos := 1
+    ; 💖 彻底修复：提取捕获组 [1] 和 [2]，确保拼音数组里存的是干净的拼音
     while RegExMatch(rawResult, "m)^([^\t\r\n]+)\t([^\t\r\n]*)", &Match, Pos) {
         Pos := Match.Pos + Match.Len
         rawCh := Trim(Match[1], "`r`n") 
@@ -113,6 +118,9 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
         MsgBox("未能识别出有效字符，请更换文本再试。", "提示")
         return
     }
+    
+    ; 🚀 注入你的 1-to-1 词典替换逻辑
+    ApplyCustomPinyinDict()
     
     if (savedBuffer != "") {
         Loop Parse, savedBuffer {
@@ -136,6 +144,116 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
     }
 }
 
+; 🚀 1-to-1 纯净逻辑：严格要求“汉字字数 = 拼音个数”
+ApplyCustomPinyinDict() {
+    global G_RawChars, G_RawPinyins, DictFile
+    if !FileExist(DictFile)
+        return
+        
+    fullText := ""
+    for char in G_RawChars {
+        fullText .= char
+    }
+    
+    dictContent := FileRead(DictFile, "UTF-8")
+    
+    Loop Parse, dictContent, "`n", "`r" {
+        line := Trim(A_LoopField)
+        if (line == "" || InStr(line, "=") == 0)
+            continue
+            
+        parts := StrSplit(line, "=")
+        searchWord := Trim(parts[1])  ; 词组，例如：银行
+        pinyinStr := Trim(parts[2])   ; 拼音，例如：yin2,hang2
+        pinyinList := StrSplit(pinyinStr, ",")
+        
+        wordLen := StrLen(searchWord)
+        
+        ; 严格校验：汉字数和拼音数必须相等
+        if (wordLen == 0 || pinyinList.Length != wordLen)
+            continue 
+            
+        ; 依次转换为标准声调
+        Loop pinyinList.Length {
+            pinyinList[A_Index] := ConvertNumToTone(pinyinList[A_Index])
+        }
+            
+        startPos := 1
+        while (offset := InStr(fullText, searchWord, false, startPos)) {
+            ; 找到词组后，严格执行 1对1 强行覆盖
+            Loop wordLen {
+                targetIdx := offset + A_Index - 1
+                if (targetIdx <= G_RawPinyins.Length) {
+                    G_RawPinyins[targetIdx] := pinyinList[A_Index]
+                }
+            }
+            startPos := offset + wordLen 
+        }
+    }
+}
+
+
+; 🚀 彻底修复版：将数字声调转换为声调字符
+ConvertNumToTone(py) {
+    py := StrLower(Trim(py))
+    if (py == "")
+        return ""
+        
+    ; 处理特殊的 v 替换为 ü
+    py := StrReplace(py, "v", "ü")
+    
+    ; 提取末尾的数字声调 (1-4)
+    tone := 0
+    if RegExMatch(py, "([1-4])$", &match) {
+        tone := Integer(match[1])   ; 获取第一个捕获组文本转换为整数
+        py := SubStr(py, 1, -1)     ; 只有匹配到声调数字时，才移除末尾的1位数字
+    }
+    
+    ; 如果没有声调或者声调不在1-4之间，直接返回
+    if (tone < 1 || tone > 4)
+        return py
+        
+    ; 声调标注优先级规则：a > o > e > ui/iu(标在后一个) > i/u/ü
+    toneMap := Map(
+        "a", ["ā", "á", "ǎ", "à"],
+        "o", ["ō", "ó", "ǒ", "ò"],
+        "e", ["ē", "é", "ě", "è"],
+        "i", ["ī", "í", "ǐ", "ì"],
+        "u", ["ū", "ú", "ǔ", "ù"],
+        "ü", ["ǖ", "ǘ", "ǚ", "ǜ"]
+    )
+    
+    ; 1. 优先检查 a, o, e
+    for vowel in ["a", "o", "e"] {
+        if InStr(py, vowel) {
+            ; 💖 核心修复：1 应该放在第 6 个参数位（Limit）来限制只替换 1 次
+            ; 参数顺序：Haystack, Needle, ReplaceText, CaseSense, OutputVarCount, Limit
+            return StrReplace(py, vowel, toneMap[vowel][tone], false, , 1)
+        }
+    }
+    
+    ; 2. 检查特殊的 ui 和 iu 组合（声调留在最后一个元音上）
+    if InStr(py, "ui") {
+        return StrReplace(py, "ui", "u" . toneMap["i"][tone], false, , 1)
+    }
+    if InStr(py, "iu") {
+        return StrReplace(py, "iu", "i" . toneMap["u"][tone], false, , 1)
+    }
+    
+    ; 3. 检查剩余的 i, u, ü
+    for vowel in ["i", "u", "ü"] {
+        if InStr(py, vowel) {
+            return StrReplace(py, vowel, toneMap[vowel][tone], false, , 1)
+        }
+    }
+    
+    return py
+}
+
+
+
+
+
 ; =========================================================================
 ; Percentage GUI Layout
 ; =========================================================================
@@ -153,22 +271,17 @@ CreatePracticeWindow() {
     TypeCollector := PracticeGui.Add("Edit", "w" WebW " h" EditH " vTypedInput")
     TypeCollector.OnEvent("Change", OnTextChanged)
     
-    ; Calculate a safe compressed width for the 3 left buttons to prevent overflow
     LeftBtnW := Integer(BtnW * 0.9)
     
-    ; Left Side Button 1: GitHub URL Import (New Feature)
     UrlTextBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x15 y+10", "🌐 GitHub导入")
     UrlTextBtn.OnEvent("Click", OnUrlTextClick)
     
-    ; Left Side Button 2: Edit Current Text
     EditCurrentBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "📝 编辑当前文本")
     EditCurrentBtn.OnEvent("Click", OnEditCurrentTextClick)
     
-    ; Left Side Button 3: Import New Text
     NewTextBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "🔄 导入新文章")
     NewTextBtn.OnEvent("Click", OnImportNewTextClick)
     
-    ; Right Side Button: Toggle Pinyin Mode
     ToggleModeBtn := PracticeGui.Add("Button", "w" BtnW " h" BtnH " x+20 yp vToggleModeBtn", "🔤 拼音模式")
     ToggleModeBtn.OnEvent("Click", OnToggleModeClick)
     
@@ -179,6 +292,7 @@ CreatePracticeWindow() {
     PracticeGui.Show("w" GuiW " h" GuiH)
     TypeCollector.Focus() 
 }
+
 WM_ACTIVATE(wParam, lParam, msg, hwnd) {
     global PracticeGui
     if (wParam != 0 && PracticeGui != "" && hwnd == PracticeGui.Hwnd) {
@@ -225,13 +339,11 @@ IsIMEComposing() {
     DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", himc)
     return len > 0
 }
-
 #HotIf WinActive("姐儿妹儿拼音练习器")
 ~LButton:: {
     global PracticeGui
     if (PracticeGui != "") {
         MouseGetPos ,, &clickedHwnd, &clickedCtrl
-        ; Updated: Added safeguards for the new layout button tracking (Button1 to Button4)
         if (clickedCtrl != "Button1" && clickedCtrl != "Button2" && clickedCtrl != "Button3" && clickedCtrl != "Button4") {
             SetTimer(() => (PracticeGui != "" ? PracticeGui["TypedInput"].Focus() : ""), -20)
         }
@@ -273,11 +385,8 @@ OnGuiClose(*) {
     ExitApp()
 }
 
-; New Feature Event Callback: Silent download handler for custom URL integration
 OnUrlTextClick(*) {
     global PracticeGui
-    
-    ; 请将下方的地址替换为您存放原始文本文件的 GitHub Raw 链接
     targetUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/1.txt"
     
     if (InStr(targetUrl, "您的用户名")) {
@@ -291,7 +400,7 @@ OnUrlTextClick(*) {
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
         whr.Open("GET", targetUrl, true)
         whr.Send()
-        if (!whr.WaitForResponse(5)) { ; 5秒网络超时保护
+        if (!whr.WaitForResponse(5)) { 
             throw Error("连接超时")
         }
         
@@ -300,14 +409,13 @@ OnUrlTextClick(*) {
         }
         
         responseText := whr.ResponseText
-        ToolTip() ; 清除提示
+        ToolTip() 
         
         if (Trim(responseText) == "") {
             MsgBox("从云端成功获取了响应，但内容似乎为空，请检查文件！", "导入失败")
             return
         }
         
-        ; 完美复用原有加工与启动核心链
         ProcessAndStart(responseText, "", true)
         
     } catch Error as err {
@@ -369,9 +477,6 @@ OnToggleModeClick(CtrlObj, *) {
     }
 }
 
-; =========================================================================
-; Adaptive Web Grid Render Engine (Restored Gray Card Theme & Padded Flip)
-; =========================================================================
 RefreshWebGrid() {
     global G_RawChars, G_RawPinyins, G_UserTyped, WB, G_PinyinOnlyMode
     
@@ -452,19 +557,19 @@ RefreshWebGrid() {
                . "          window.scrollTo(0, currentScrollY - 15);"
                . "        }"
                . "      } else {"
-. "        var currentScroll = document.documentElement.scrollTop || document.body.scrollTop;"
-. "        window.scrollTo(0, currentScroll);"
-. "      }"
-. "    }"
-. "  }"
-. "};"
-. ""
-htmlEnd := ""
-fullHtml := htmlHead . htmlStyle . htmlScript . htmlEnd
-htmlTemp := A_ScriptDir "\layout_temp.html"
-if FileExist(htmlTemp) {
-FileDelete(htmlTemp)
-}
-FileAppend(fullHtml, htmlTemp, "UTF-8")
-WB.Navigate(htmlTemp)
+               . "        var currentScroll = document.documentElement.scrollTop || document.body.scrollTop;"
+               . "        window.scrollTo(0, currentScroll);"
+               . "      }"
+               . "    }"
+               . "  }"
+               . "};"
+               . "</script>"
+    htmlEnd := "</body></html>"
+    fullHtml := htmlHead . htmlStyle . htmlScript . htmlEnd
+    htmlTemp := A_ScriptDir "\layout_temp.html"
+    if FileExist(htmlTemp) {
+        FileDelete(htmlTemp)
+    }
+    FileAppend(fullHtml, htmlTemp, "UTF-8")
+    WB.Navigate(htmlTemp)
 }
