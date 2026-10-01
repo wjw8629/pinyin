@@ -10,7 +10,7 @@
 
 
 
-&#x20; pyinstaller --onedir --noconsole pinyin\_core.py
+&#x20; pyinstaller --onedir --noconsole --clean pinyin_core.py
 
 
 
