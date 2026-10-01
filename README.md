@@ -1,6 +1,18 @@
-中文不易，多加努力 ：）
+<p align="center">
+
+&#x20; # ⌨️ 姐儿妹儿拼音练习器 (Pinyin Typing Practice)
+
+</p>
+
+<p align="center">
+
+&#x20; # ====== 中文不易，多加努力 ：）======
+
+</p>
 
 
+
+<br><br>
 
 
 
@@ -10,7 +22,7 @@
 
 
 
-&#x20; pyinstaller --onedir --noconsole pinyin\_core.py
+&#x20; pyinstaller --onedir --noconsole pinyin\_core.py <br>
 
 
 
