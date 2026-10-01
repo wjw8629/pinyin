@@ -2,7 +2,7 @@
 
 \# ======= 中文不易，多加努力 ：）=======
 
-
+<br><br>
 
 
 
@@ -37,10 +37,4 @@
 &#x20;   ;outputTemp := A\_ScriptDir "\\output\_temp.txt"
 
 &#x20;   ;pyScript := A\_ScriptDir "\\pinyin\_core.py"
-
-
-
-
-
-
 
