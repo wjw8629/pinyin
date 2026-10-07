@@ -21,12 +21,6 @@
 \#2，修改以下，ahk里面搜索“替换”
 
 
-&#x20;   ;RunWait(A\_ComSpec ' /c python "' pyScript '"', A\_ScriptDir, "Hide")
-
-&#x20;   RunWait('"' PyExe '"', A_ScriptDir, "Hide")
-
-
-
 &#x20;   ;global InputTemp := A_ScriptDir "\input_temp.txt"
 
 &#x20;   global InputTemp := A_ScriptDir "\dist\input_temp.txt"
