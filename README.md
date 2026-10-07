@@ -18,25 +18,22 @@
 
 
 
-\#2，修改以下，ahk里面搜索“替换”，同时可以搜索到github文件的路径位置
-
+\#2，修改以下，ahk里面搜索“替换”
 
 
 &#x20;   ;RunWait(A\_ComSpec ' /c python "' pyScript '"', A\_ScriptDir, "Hide")
 
-&#x20;   RunWait('"' pyScript '"', A\_ScriptDir, "Hide")
+&#x20;   RunWait('"' PyExe '"', A_ScriptDir, "Hide")
 
 
 
-&#x20;   inputTemp := A\_ScriptDir "\\dist\\input\_temp.txt"
+&#x20;   ;global InputTemp := A_ScriptDir "\input_temp.txt"
 
-&#x20;   outputTemp := A\_ScriptDir "\\dist\\output\_temp.txt"
+&#x20;   global InputTemp := A_ScriptDir "\dist\input_temp.txt"
 
-&#x20;   pyScript := A\_ScriptDir "\\dist\\pinyin\_core\\pinyin\_core.exe"
+&#x20;   ;global OutputTemp := A_ScriptDir "\output_temp.txt"
 
-&#x20;   ;inputTemp := A\_ScriptDir "\\input\_temp.txt"
+&#x20;   global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
 
-&#x20;   ;outputTemp := A\_ScriptDir "\\output\_temp.txt"
 
-&#x20;   ;pyScript := A\_ScriptDir "\\pinyin\_core.py"
 
