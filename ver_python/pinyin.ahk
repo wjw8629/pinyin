@@ -7,9 +7,47 @@ global G_RawPinyins := []
 global G_UserTyped := []      
 global PracticeGui := ""      
 global WB := ""               
+global StudyGui := ""         
+global StudyPrevBtn := ""    
+global StudyNextBtn := ""    
+global StudyIndexText := ""  
+global StudyCharText := ""    
+global TitleText := ""        
+global WebControl := ""       
+global TypeCollector := ""     
 global SaveFile := A_ScriptDir "\progress_save.ini" 
 global DictFile := A_ScriptDir "\custom_pinyin.txt"  ; Custom pinyin dictionary path
+global InputTemp := A_ScriptDir "\dist\input_temp.txt"
+;替换
+global InputTemp := A_ScriptDir "\input_temp.txt"
+;global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
+global OutputTemp := A_ScriptDir "\output_temp.txt"
+;global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
+global PyScript := A_ScriptDir "\pinyin_core.py"
+global PyExe := A_ScriptDir "\dist\pinyin_core\pinyin_core.exe"
 global G_PinyinOnlyMode := false            
+
+global ChatGui := ""
+global ChatInput := ""
+global ChatWeb := ""
+global ChatWB := ""
+global ChatSendBtn := ""
+global ChatBtn := ""
+global ChatIsReady := false
+global ChatHistoryFile := ""
+global ChatMessages := []
+global ChatLastRenderHtml := ""
+global ChatHistoryDirty := false
+global ChatListenSocket := 0
+global ChatSocketDLL := 0
+global ChatLastSentText := ""
+global ChatLastSentTick := 0
+global ChatLogFile := A_ScriptDir "\chat_history_log.txt"
+global ChatConfigFile := A_ScriptDir "\chat_config.ini"
+global ChatPort := 28911
+global ChatHistoryLimit := 1000
+global ChatNickName := ""
+global DownloadDictUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/custom_pinyin.txt"  ; Leave blank and fill in the actual dictionary download URL later
 
 ; --- 【UI Optimization】Redistributed heights to grant Web Layout more room ---
 global ScaleFactor := A_ScreenDPI / 96  
@@ -68,17 +106,6 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
         return
     }
 
-    inputTemp := A_ScriptDir "\input_temp.txt"
-    outputTemp := A_ScriptDir "\output_temp.txt"
-    pyScript := A_ScriptDir "\pinyin_core.py"
-    ;inputTemp := A_ScriptDir "\dist\input_temp.txt"
-    ;outputTemp := A_ScriptDir "\dist\output_temp.txt"
-    ;pyScript := A_ScriptDir "\dist\pinyin_core\pinyin_core.exe"
-
-    if (!FileExist(pyScript)) {
-        MsgBox("未在当前目录下找到 [pinyin_core.py] 脚本！`n请确保它与 AHK 脚本放在同一文件夹。", "错误")
-        return
-    }
     
     if FileExist(inputTemp)
         FileDelete(inputTemp)
@@ -86,8 +113,14 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
         FileDelete(outputTemp)
         
     FileAppend(inputText, inputTemp, "UTF-8")
-    RunWait(A_ComSpec ' /c python "' pyScript '"', A_ScriptDir, "Hide")
-    ;RunWait('"' pyScript '"', A_ScriptDir, "Hide")
+    if FileExist(PyExe)
+            RunWait('"' PyExe '"', A_ScriptDir, "Hide")
+        else if FileExist(PyScript)
+            RunWait(A_ComSpec ' /c python "' PyScript '"', A_ScriptDir, "Hide")
+        else {
+            MsgBox("未找到 Python 转译引擎，请确保 dist 文件夹存在或安装了 Python。", "转译失败")
+            return
+        }
     
     if (!FileExist(outputTemp)) {
         MsgBox("Python 转译引擎未响应，请确保环境正常并安装了 pypinyin 库。", "转译失败")
@@ -145,49 +178,54 @@ ProcessAndStart(inputText, savedBuffer := "", showNotify := true) {
 }
 
 ; 🚀 1-to-1 纯净逻辑：严格要求“汉字字数 = 拼音个数”
-ApplyCustomPinyinDict() {
+ApplyCustomPinyinDict(chars := unset, pinyins := unset) {
     global G_RawChars, G_RawPinyins, DictFile
+
+    if IsSet(chars) {
+        targetChars := chars
+        targetPinyins := pinyins
+    } else {
+        targetChars := G_RawChars
+        targetPinyins := G_RawPinyins
+    }
+
     if !FileExist(DictFile)
         return
-        
+
     fullText := ""
-    for char in G_RawChars {
+    for char in targetChars {
         fullText .= char
     }
-    
+
     dictContent := FileRead(DictFile, "UTF-8")
-    
+
     Loop Parse, dictContent, "`n", "`r" {
         line := Trim(A_LoopField)
         if (line == "" || InStr(line, "=") == 0)
             continue
-            
+
         parts := StrSplit(line, "=")
-        searchWord := Trim(parts[1])  ; 词组，例如：银行
-        pinyinStr := Trim(parts[2])   ; 拼音，例如：yin2,hang2
+        searchWord := Trim(parts[1])
+        pinyinStr := Trim(parts[2])
         pinyinList := StrSplit(pinyinStr, ",")
-        
         wordLen := StrLen(searchWord)
-        
-        ; 严格校验：汉字数和拼音数必须相等
+
         if (wordLen == 0 || pinyinList.Length != wordLen)
-            continue 
-            
-        ; 依次转换为标准声调
+            continue
+
         Loop pinyinList.Length {
             pinyinList[A_Index] := ConvertNumToTone(pinyinList[A_Index])
         }
-            
+
         startPos := 1
         while (offset := InStr(fullText, searchWord, false, startPos)) {
-            ; 找到词组后，严格执行 1对1 强行覆盖
             Loop wordLen {
                 targetIdx := offset + A_Index - 1
-                if (targetIdx <= G_RawPinyins.Length) {
-                    G_RawPinyins[targetIdx] := pinyinList[A_Index]
+                if (targetIdx <= targetPinyins.Length) {
+                    targetPinyins[targetIdx] := pinyinList[A_Index]
                 }
             }
-            startPos := offset + wordLen 
+            startPos := offset + wordLen
         }
     }
 }
@@ -258,39 +296,87 @@ ConvertNumToTone(py) {
 ; Percentage GUI Layout
 ; =========================================================================
 CreatePracticeWindow() {
-    global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, FontSize
+    global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, FontSize, TitleText, WebControl, TypeCollector
     
     PracticeGui := Gui("+Resize -DPIScale", "姐儿妹儿拼音练习器")
     PracticeGui.SetFont("s" FontSize, "Microsoft YaHei")
-    
-    WebControl := PracticeGui.Add("ActiveX", "w" WebW " h" WebH " x15 y15", "Shell.Explorer")
+
+    TitleText := PracticeGui.Add("Text", "x15 y15", "⌨️ 请在下方敲击键盘进行对照练习：")
+    WebControl := PracticeGui.Add("ActiveX", "w" WebW " h" WebH " x15 y+10", "Shell.Explorer")
     WB := WebControl.Value
-    
-    PracticeGui.Add("Text", "x15 y+10", "⌨️ 请在下方敲击键盘进行对照练习：")
-    
-    TypeCollector := PracticeGui.Add("Edit", "w" WebW " h" EditH " vTypedInput")
+
+    TypeCollector := PracticeGui.Add("Edit", "w" WebW " h" EditH " x15 y+10 vTypedInput")
     TypeCollector.OnEvent("Change", OnTextChanged)
-    
+
     LeftBtnW := Integer(BtnW * 0.9)
-    
-    UrlTextBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x15 y+10", "🌐 GitHub导入")
-    UrlTextBtn.OnEvent("Click", OnUrlTextClick)
-    
-    EditCurrentBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "📝 编辑当前文本")
-    EditCurrentBtn.OnEvent("Click", OnEditCurrentTextClick)
-    
-    NewTextBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "🔄 导入新文章")
+    NewTextBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x15 y+10", "🔄 导入新文章")
     NewTextBtn.OnEvent("Click", OnImportNewTextClick)
-    
+
+    StudyBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "📖 生字练习")
+    StudyBtn.OnEvent("Click", OnStudyModeClick)
+
     ToggleModeBtn := PracticeGui.Add("Button", "w" BtnW " h" BtnH " x+20 yp vToggleModeBtn", "🔤 拼音模式")
     ToggleModeBtn.OnEvent("Click", OnToggleModeClick)
-    
+
+    global ChatBtn
+    ChatBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "💬 聊天")
+    ChatBtn.OnEvent("Click", OnOpenChatClick)
+
+    global DictDownloadBtn
+    DictDownloadBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "📥 下载多音字字典")
+    DictDownloadBtn.OnEvent("Click", OnDownloadDictionaryClick)
+
     PracticeGui.OnEvent("Close", OnGuiClose)
-    
-    OnMessage(0x0006, WM_ACTIVATE) 
-    
+    PracticeGui.OnEvent("Size", OnPracticeGuiResize)
+
+    OnMessage(0x0006, WM_ACTIVATE)
+
     PracticeGui.Show("w" GuiW " h" GuiH)
-    TypeCollector.Focus() 
+    TypeCollector.Focus()
+}
+
+OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight) {
+    global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, TitleText, WebControl, TypeCollector
+
+    if (PracticeGui == "" || WB == "")
+        return
+
+    GuiW := Max(NewWidth, 380)
+    GuiH := Max(NewHeight, 320)
+
+    contentW := Max(300, GuiW - 30)
+    leftBtnW := Max(100, Min(180, Integer(contentW * 0.22)))
+    gap := Max(8, Integer(contentW * 0.015))
+    toggleBtnW := Max(100, Min(180, Integer(contentW * 0.24)))
+
+    WebW := Max(270, GuiW - 30)
+    WebH := Max(120, Integer(GuiH * 0.72))
+    EditH := Max(28, Integer(GuiH * 0.07))
+    BtnW := Max(100, Min(180, Integer(GuiW * 0.20)))
+    BtnH := Max(30, Integer(GuiH * 0.05))
+
+    TitleText.Move(15, 15, contentW, 25)
+    WebControl.Move(15, 45, WebW, WebH)
+    TypeCollector.Move(15, 45 + WebH + 10, WebW, EditH)
+
+    TypeCollector.GetPos(&inputX, &inputY, &inputW, &inputH)
+    inputBottomY := inputY + inputH
+    buttonY := Integer((inputBottomY + GuiH) / 2 - BtnH / 2)
+    buttonY := Max(buttonY, inputBottomY + 10)
+
+    NewTextBtnX := 15
+    StudyBtnX := NewTextBtnX + leftBtnW + gap
+    ToggleBtnX := StudyBtnX + leftBtnW + gap
+    ChatBtnX := ToggleBtnX + toggleBtnW + gap
+    DictBtnX := ChatBtnX + leftBtnW + gap
+
+    PracticeGui["Button1"].Move(NewTextBtnX, buttonY, leftBtnW, BtnH)
+    PracticeGui["Button2"].Move(StudyBtnX, buttonY, leftBtnW, BtnH)
+    PracticeGui["Button3"].Move(ToggleBtnX, buttonY, toggleBtnW, BtnH)
+    ChatBtn.Move(ChatBtnX, buttonY, leftBtnW, BtnH)
+    DictDownloadBtn.Move(DictBtnX, buttonY, leftBtnW, BtnH)
+
+    RefreshWebGrid()
 }
 
 WM_ACTIVATE(wParam, lParam, msg, hwnd) {
@@ -344,7 +430,7 @@ IsIMEComposing() {
     global PracticeGui
     if (PracticeGui != "") {
         MouseGetPos ,, &clickedHwnd, &clickedCtrl
-        if (clickedCtrl != "Button1" && clickedCtrl != "Button2" && clickedCtrl != "Button3" && clickedCtrl != "Button4") {
+        if (clickedCtrl != "Button1" && clickedCtrl != "Button2" && clickedCtrl != "Button3" && clickedCtrl != "Button4" && clickedCtrl != "Button5") {
             SetTimer(() => (PracticeGui != "" ? PracticeGui["TypedInput"].Focus() : ""), -20)
         }
     }
@@ -385,7 +471,7 @@ OnGuiClose(*) {
     ExitApp()
 }
 
-OnUrlTextClick(*) {
+OnUrlTextClick(ModalGui := "") {
     global PracticeGui
     targetUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/1.txt"
     
@@ -415,6 +501,11 @@ OnUrlTextClick(*) {
             MsgBox("从云端成功获取了响应，但内容似乎为空，请检查文件！", "导入失败")
             return
         }
+
+        if (ModalGui != "") {
+            ModalGui.Destroy()
+            Sleep(100)
+        }
         
         ProcessAndStart(responseText, "", true)
         
@@ -424,41 +515,268 @@ OnUrlTextClick(*) {
     }
 }
 
-OnEditCurrentTextClick(*) {
+OnImportNewTextClick(*) {
     global PracticeGui, G_CurrentOriginalText
     
-    ModalGui := Gui("-MinimizeBox -MaximizeBox +Owner" PracticeGui.Hwnd, "编辑当前练习文本")
-    ModalGui.SetFont("s11", "Microsoft YaHei")
-    ModalGui.Add("Text",, "您可以在下方直接修改当前正在练习的段落：")
-    
-    EditField := ModalGui.Add("Edit", "w500 h180 vEditInputText +Multi", G_CurrentOriginalText)
-    
-    ConfirmBtn := ModalGui.Add("Button", "w120 x190 y+15 Default", "⚡ 确认修改")
-    ConfirmBtn.OnEvent("Click", (*) => (
-        txt := EditField.Value,
-        ModalGui.Destroy(),
-        Sleep(100), 
-        ProcessAndStart(txt, "", true) 
-    ))
-    ModalGui.Show()
-}
+    modalW := Max(420, Min(620, GuiW))
+    modalH := Max(260, Min(360, GuiH))
+    inputW := modalW - 30
+    inputH := Max(120, modalH - 112)
 
-OnImportNewTextClick(*) {
-    global PracticeGui
-    
-    ModalGui := Gui("-MinimizeBox -MaximizeBox +Owner" PracticeGui.Hwnd, "更换练习文章")
+    ModalGui := Gui("-MinimizeBox -MaximizeBox +Owner" PracticeGui.Hwnd, "导入新文章")
     ModalGui.SetFont("s11", "Microsoft YaHei")
-    ModalGui.Add("Text",, "请在下方粘贴全新的中文练习段落：")
-    NewInputField := ModalGui.Add("Edit", "w500 h180 vNewInputText +Multi", "")
-    
-    ConfirmBtn := ModalGui.Add("Button", "w120 x190 y+15 Default", "⚡ 确认更换")
+    ModalGui.Add("Text", "x15 y15", "请在下方输入或编辑正文：")
+    NewInputField := ModalGui.Add("Edit", "w" inputW " h" inputH " x15 y+10 vNewInputText +Multi", G_CurrentOriginalText)
+
+    NewInputField.GetPos(&inputX, &inputY, &inputW, &inputH)
+    buttonW := Max(120, Min(150, Integer((modalW - 42) / 2)))
+    buttonGap := 12
+    buttonY := inputY + inputH + 12
+
+    GitHubBtn := ModalGui.Add("Button", "w" buttonW " h36 x15 y" buttonY, "🌐 从 GitHub 导入")
+    GitHubBtn.OnEvent("Click", (*) => OnUrlTextClick(ModalGui))
+
+    ConfirmBtn := ModalGui.Add("Button", "w" buttonW " h36 x+" buttonGap " yp Default", "⚡ 确认更换")
     ConfirmBtn.OnEvent("Click", (*) => (
         txt := NewInputField.Value,
         ModalGui.Destroy(),
-        Sleep(100), 
-        ProcessAndStart(txt, "", true) 
+        Sleep(100),
+        ProcessAndStart(txt, "", true)
     ))
-    ModalGui.Show()
+    ModalGui.Show("w" modalW " h" modalH)
+}
+
+OnStudyModeClick(*) {
+    global PracticeGui, StudyGui, StudyChars, StudyPinyins, StudyPageIndex
+
+    if (PracticeGui == "")
+        return
+
+    StudyChars := GetUniqueStudyChars()
+    if (StudyChars.Length == 0) {
+        MsgBox("当前文本没有可用于生字练习的汉字。", "提示")
+        return
+    }
+
+    StudyChars := NormalizeStudyChars(StudyChars)
+    if (StudyChars.Length == 0) {
+        MsgBox("当前文本中的生字有效字符为空，请重新导入。", "提示")
+        return
+    }
+
+    StudyPinyins := []
+    for idx, ch in StudyChars {
+        StudyPinyins.Push(GetStudyPinyin(ch))
+    }
+
+    StudyPageIndex := 1
+    ShuffleStudyChars()
+    StudyChars := NormalizeStudyChars(StudyChars)
+    if (StudyChars.Length == 0) {
+        MsgBox("打乱后没有可显示的生字。", "提示")
+        return
+    }
+    CreateStudyWindow()
+    PracticeGui.Hide()
+    StudyGui.Show("w" GuiW " h" GuiH)
+}
+
+GetUniqueStudyChars() {
+    global G_RawChars
+    seen := Map()
+    chars := []
+
+    for _, ch in G_RawChars {
+        if (Trim(ch) == "" || seen.Has(ch))
+            continue
+        if (!RegExMatch(ch, "[\x{4e00}-\x{9fa5}]"))
+            continue
+        seen[ch] := true
+        chars.Push(ch)
+    }
+
+    return chars
+}
+
+NormalizeStudyChars(chars) {
+    normalized := []
+    seen := Map()
+
+    for _, ch in chars {
+        if (Trim(ch) == "" || RegExMatch(ch, "\s"))
+            continue
+        if (!RegExMatch(ch, "[\x{4e00}-\x{9fa5}]"))
+            continue
+        if (seen.Has(ch))
+            continue
+        seen[ch] := true
+        normalized.Push(ch)
+    }
+
+    return normalized
+}
+
+GetStudyPinyin(ch) {
+    global G_RawChars, G_RawPinyins
+
+    for idx, rawChar in G_RawChars {
+        if (rawChar == ch) {
+            return G_RawPinyins[idx]
+        }
+    }
+
+    return ch
+}
+
+ShuffleStudyChars() {
+    global StudyChars
+
+    Loop StudyChars.Length - 1 {
+        index := StudyChars.Length - A_Index + 1
+        j := Random(1, index)
+        temp := StudyChars[index]
+        StudyChars[index] := StudyChars[j]
+        StudyChars[j] := temp
+    }
+}
+
+CreateStudyWindow() {
+    global StudyGui, StudyPrevBtn, StudyNextBtn, StudyIndexText, StudyCharText, GuiW, GuiH, FontSize
+    global StudyChars, StudyPinyins, StudyPageIndex
+
+    if (StudyGui != "") {
+        StudyGui.Destroy()
+        StudyGui := ""
+    }
+
+        StudyGui := Gui("+Resize -DPIScale", "生字练习 · 单字翻页")
+    
+    ; 1. 明确设置窗口的内边距，让整体布局更美观
+    StudyGui.MarginX := 20
+    StudyGui.MarginY := 20
+
+    ; 标题行
+    StudyGui.SetFont("s" FontSize + 4, "Microsoft YaHei")
+    StudyGui.Add("Text", "x15 y15 w" (GuiW - 30), "📖 认识生字 · 随机单字练习")
+
+    ; 2. 居中大区域的宽度（去掉两侧按钮占用的空间）
+    local CenterAreaW := GuiW - 260
+
+    ; 3. 顶部进度文本：使用相对定位，明确限制高度防止被下方的巨型字冲散
+    StudyGui.SetFont("s18", "Microsoft YaHei")
+    StudyIndexText := StudyGui.Add("Text", "x130 y+20 w" CenterAreaW " h35 Center", "当前共有 " StudyChars.Length " 个字")
+
+    ; 4. 超大汉字区域：y+10 表示紧跟在进度文本下方 10 像素，不再使用绝对的 y80
+    ; 同时把高度 h 设为自动（不写 h），让 AHK 自动根据 s220 申请足够的纵向空间，彻底杜绝重叠！
+    StudyGui.SetFont("s220 Bold", "Microsoft YaHei")
+    StudyCharText := StudyGui.Add("Text", "x130 y+10 w" CenterAreaW " Center", "")
+
+    ; 5. 调整左右翻页按钮的 Y 轴坐标：让他们根据超大汉字居中对齐
+    ; 获取大汉字控件的坐标信息，动态计算出按钮最完美的垂直居中位置
+    StudyCharText.GetPos(&cX, &cY, &cW, &cH)
+    local BtnY := cY + Integer((cH - 80) / 2)
+
+    ; 左翻页按钮
+    StudyGui.SetFont("s24", "Microsoft YaHei") ; 让箭头的符号也稍微大一点
+    StudyPrevBtn := StudyGui.Add("Button", "x15 y" BtnY " w100 h80", "←")
+    StudyPrevBtn.OnEvent("Click", (*) => GoStudyPage(-1))
+
+    ; 右翻页按钮（精准靠在右侧边缘内）
+    StudyNextBtn := StudyGui.Add("Button", "x" (GuiW - 115) " y" BtnY " w100 h80", "→")
+    StudyNextBtn.OnEvent("Click", (*) => GoStudyPage(1))
+
+    StudyGui.OnEvent("Close", OnReturnToPractice)
+
+    ; 首次进入生字界面时，立即读取并显示第一个有效生字
+    RefreshStudyPage()
+
+    ; 6. 务必确保你在下面显示窗口时，传入了正确的 GuiW 和 GuiH
+    ; StudyGui.Show("w" GuiW " h" (cY + cH + 40)) ; 建议高度根据内容自动撑开，更不容易出错
+
+}
+
+OnStudyGuiResize(GuiObj, MinMax, NewWidth, NewHeight) {
+    global StudyPrevBtn, StudyNextBtn, StudyIndexText, StudyCharText, GuiW, GuiH
+
+    if (StudyPrevBtn == "" || StudyNextBtn == "" || StudyIndexText == "" || StudyCharText == "")
+        return
+
+    GuiW := Max(NewWidth, 380)
+    GuiH := Max(NewHeight, 320)
+
+    leftMargin := 15
+    rightMargin := 115
+    cardX := 125
+    cardW := Max(130, GuiW - 240)
+    cardH := Max(120, GuiH - 160)
+    navY := Integer((GuiH - 80) / 2)
+
+    ; 左右按钮与文字区域互不重叠
+    StudyPrevBtn.Move(leftMargin, navY, 100, 80)
+    StudyIndexText.Move(cardX, 25, cardW, 30)
+    StudyCharText.Move(cardX, 80, cardW, cardH)
+    StudyNextBtn.Move(GuiW - rightMargin, navY, 100, 80)
+
+    charFont := Max(120, Min(220, Integer(Min(GuiW, GuiH) * 0.45)))
+    StudyCharText.SetFont("s" charFont, "Microsoft YaHei")
+    RefreshStudyPage()
+}
+
+GoStudyPage(step) {
+    global StudyChars, StudyPageIndex
+
+    if (StudyChars.Length == 0)
+        return
+
+    nextIndex := StudyPageIndex + step
+    if (nextIndex < 1)
+        nextIndex := StudyChars.Length
+    else if (nextIndex > StudyChars.Length)
+        nextIndex := 1
+
+    StudyPageIndex := nextIndex
+    RefreshStudyPage()
+}
+
+RefreshStudyPage() {
+    global StudyGui, StudyIndexText, StudyCharText, StudyChars, StudyPageIndex, GuiW, GuiH
+
+    if (StudyGui == "" || StudyIndexText == "" || StudyCharText == "" || StudyChars.Length == 0)
+        return
+
+    if (StudyPageIndex < 1 || StudyPageIndex > StudyChars.Length)
+        StudyPageIndex := 1
+
+    while (StudyPageIndex <= StudyChars.Length && Trim(StudyChars[StudyPageIndex]) == "") {
+        StudyChars.RemoveAt(StudyPageIndex)
+        if (StudyPageIndex > StudyChars.Length)
+            StudyPageIndex := 1
+    }
+
+    if (StudyChars.Length == 0)
+        return
+
+    currentChar := StudyChars[StudyPageIndex]
+    StudyIndexText.Text := "当前共有 " StudyChars.Length " 个字"
+    StudyCharText.Text := currentChar
+
+    if (StudyCharText != "") {
+        charFont := Max(120, Min(220, Integer(Min(GuiW, GuiH) * 0.45)))
+        StudyCharText.SetFont("s" charFont, "Microsoft YaHei")
+    }
+}
+
+OnReturnToPractice(*) {
+    global PracticeGui, StudyGui
+
+    if (StudyGui != "") {
+        StudyGui.Destroy()
+        StudyGui := ""
+    }
+    if (PracticeGui != "") {
+        PracticeGui.Show("w" GuiW " h" GuiH)
+        PracticeGui["TypedInput"].Focus()
+    }
 }
 
 OnToggleModeClick(CtrlObj, *) {
@@ -532,11 +850,11 @@ RefreshWebGrid() {
     
     htmlStyle .= ".word-block { display: inline-block; zoom: 1; vertical-align: bottom; min-width: 75px; max-width: 150px; text-align: center; margin: 0 5px 22px 5px; box-sizing: border-box; padding: 2px 2px; border-radius: 4px; border: 1px solid transparent; height: 98px; } "
     htmlStyle .= ".pinyin-cell { font-size: 1.0rem; color: #0066CC; font-family: 'Courier New', sans-serif; font-weight: bold; height: 18px; line-height: 1.1; text-align: center; width: 100%; word-break: break-all; overflow: hidden; } "
-    htmlStyle .= ".char-cell { font-size: 1.55rem; color: #333333; height: 32px; line-height: 1.2; text-align: center; width: 100%; margin-top: 0px; font-weight: 500; } "
+    htmlStyle .= ".char-cell { font-size: 1.52rem; color: #333333; height: 32px; line-height: 1.2; text-align: center; width: 100%; margin-top: 0px; font-weight: 500; } "
     htmlStyle .= ".typed-cell { font-size: 1.55rem; height: 38px; line-height: 1.4; text-align: center; width: 100%; margin-top: 0px; border-top: 1px dashed #DDD; padding-top: 6px; } "
     
     htmlStyle .= ".pending { color: #666666; background-color: #EEEEEE; border-color: #E5E5E5; } "
-    
+
     htmlStyle .= ".correct { background-color: #EFFFF4; border-color: #A2E6B1; } .correct .typed-cell { color: #28A745; } "
     htmlStyle .= ".wrong { background-color: #FFF0F0; border-color: #FFA3A3; } .wrong .typed-cell { color: #DC3545; } "
     htmlStyle .= ".current { background-color: #FFF9E6; border-color: #FFE082; border-bottom: 2px solid #FFC107; } .current .char-cell { font-weight: bold; color: #B38600; } "
@@ -572,4 +890,482 @@ RefreshWebGrid() {
     }
     FileAppend(fullHtml, htmlTemp, "UTF-8")
     WB.Navigate(htmlTemp)
+}
+
+; =========================================================================
+; � Dictionary download
+; =========================================================================
+OnDownloadDictionaryClick(*) {
+    global DownloadDictUrl
+
+    if (Trim(DownloadDictUrl) == "") {
+        MsgBox("请先在脚本顶部设置 DownloadDictUrl，再点击下载多音字字典。", "下载地址未配置")
+        return
+    }
+
+    targetFile := DictFile
+    ToolTip("📥 正在下载并覆盖 custom_pinyin.txt，请稍候...")
+
+    try {
+        whr := ComObject("WinHttp.WinHttpRequest.5.1")
+        whr.Open("GET", DownloadDictUrl, true)
+        whr.Send()
+        if (!whr.WaitForResponse(10))
+            throw Error("连接超时")
+        if (whr.Status != 200)
+            throw Error("HTTP 状态错误: " whr.Status)
+
+        if (FileExist(targetFile))
+            FileDelete(targetFile)
+        FileAppend(whr.ResponseText, targetFile, "UTF-8")
+        ToolTip("✅ 已下载并覆盖 custom_pinyin.txt")
+        SetTimer(() => ToolTip(), -2000)
+    } catch Error as err {
+        ToolTip()
+        MsgBox("下载并覆盖 custom_pinyin.txt 失败！`n请检查下载地址和网络连接。`n`n错误详细信息: " err.Message, "下载失败")
+    }
+}
+
+; =========================================================================
+; �💬 Chat integration (lazy initialization to avoid startup delay)
+; =========================================================================
+OnOpenChatClick(*) {
+    global ChatGui, ChatBtn, ChatIsReady, ChatInput
+
+    if (ChatIsReady && ChatGui != "") {
+        ChatGui.Show()
+        ChatInput.Focus()
+        return
+    }
+
+    InitChat()
+    if (ChatIsReady && ChatGui != "") {
+        ChatGui.Show()
+        ChatInput.Focus()
+    }
+}
+
+InitChat() {
+    global ChatGui, ChatInput, ChatWeb, ChatWB, ChatSendBtn, ChatNickName
+    global ChatHistoryFile, ChatMessages, ChatIsReady, ChatLogFile, ChatConfigFile
+    global ChatPort, ChatHistoryLimit, ChatListenSocket, ChatSocketDLL
+    global ChatLastSentText, ChatLastSentTick
+
+    if (ChatIsReady)
+        return
+
+    if !FileExist(DictFile) {
+        FileAppend("不易=bu2,yi4", DictFile, "UTF-8")
+    }
+
+    if FileExist(ChatConfigFile) {
+        try ChatNickName := IniRead(ChatConfigFile, "UserInfo", "Nickname", "")
+    }
+    if (ChatNickName = "") {
+        ChatNickName := EnvGet("USERNAME")
+        try IniWrite(ChatNickName, ChatConfigFile, "UserInfo", "Nickname")
+    }
+
+    try {
+        ChatHistoryFile := FileOpen(ChatLogFile, "a", "UTF-8")
+    } catch {
+        MsgBox("无法打开聊天历史：" ChatLogFile, "错误")
+        return
+    }
+
+    LoadChatHistory()
+    CreateChatWindow()
+    InitChatSocket()
+    ChatIsReady := true
+    RefreshWebChat()
+}
+
+InitChatSocket() {
+    global ChatSocketDLL, ChatListenSocket, ChatPort
+
+    ChatSocketDLL := DllCall("LoadLibrary", "Str", "Ws2_32.dll", "Ptr")
+    WSAData := Buffer(400, 0)
+    if DllCall("Ws2_32\WSAStartup", "UShort", 0x0202, "Ptr", WSAData) {
+        MsgBox("聊天网络初始化失败。", "错误")
+        CleanUpChat(false)
+        return
+    }
+
+    ChatListenSocket := DllCall("Ws2_32\socket", "Int", 2, "Int", 2, "Int", 17, "Ptr")
+    if (ChatListenSocket = -1) {
+        MsgBox("聊天端口创建失败。", "错误")
+        CleanUpChat(false)
+        return
+    }
+
+    optVal := Buffer(4, 0)
+    NumPut("Int", 1, optVal, 0)
+    DllCall("Ws2_32\setsockopt", "Ptr", ChatListenSocket, "Int", 0xffff, "Int", 0x0020, "Ptr", optVal, "Int", 4)
+
+    addr := Buffer(16, 0)
+    NumPut("UShort", 2, addr, 0)
+    NumPut("UShort", DllCall("Ws2_32\htons", "UShort", ChatPort, "UShort"), addr, 2)
+    if DllCall("Ws2_32\bind", "Ptr", ChatListenSocket, "Ptr", addr, "Int", 16) = -1 {
+        MsgBox("聊天端口 " ChatPort " 已被占用。", "错误")
+        CleanUpChat(false)
+        return
+    }
+
+    OnMessage(0x4001, ReceiveChatData)
+    DllCall("Ws2_32\WSAAsyncSelect", "Ptr", ChatListenSocket, "Ptr", ChatGui.Hwnd, "UInt", 0x4001, "Int", 1)
+}
+
+CreateChatWindow() {
+    global ChatGui, ChatInput, ChatWeb, ChatWB, ChatSendBtn, ChatNickName
+
+    ChatGui := Gui("+Resize", "内网拼音群聊")
+    ChatGui.SetFont("s10.5", "Microsoft YaHei")
+    ChatGui.Add("Text", "x15 y12 vChatNameText", "当前昵称: " ChatNickName)
+
+    nameBtn := ChatGui.Add("Button", "x+10 y8 w75 h22", "修改名字")
+    nameBtn.SetFont("s9", "Microsoft YaHei")
+    nameBtn.OnEvent("Click", OnChangeChatNameClick)
+
+    ChatWeb := ChatGui.Add("ActiveX", "x15 y38 w390 h324", "Shell.Explorer")
+    ChatWB := ChatWeb.Value
+
+    ChatInput := ChatGui.Add("Edit", "x15 y+12 w300 h100 +Multi")
+    ChatInput.SetFont("s10", "Microsoft YaHei")
+    ChatSendBtn := ChatGui.Add("Button", "x+8 yp w82 h100", "发送")
+    ChatSendBtn.OnEvent("Click", OnSendChatMessage)
+
+    ChatGui.OnEvent("Size", OnChatGuiResize)
+    ChatGui.OnEvent("Close", (*) => CleanUpChat(false))
+    ChatGui.Show("w420 h550")
+    ChatInput.Focus()
+}
+
+OnChatGuiResize(GuiObj, MinMax, Width, Height) {
+    global ChatInput, ChatWeb, ChatSendBtn
+    if (MinMax = -1)
+        return
+
+    padding := 15
+    gap := 8
+    bottomReserve := 80
+    webHeight := Max(120, Height - 38 - bottomReserve)
+    ChatWeb.Move(padding, 38, Width - padding * 2, webHeight)
+    ChatWeb.GetPos(&webX, &webY, &webW, &webH)
+
+    inputY := webY + webH + gap
+    inputHeight := Max(60, Height - inputY - padding)
+    buttonHeight := inputHeight
+    buttonWidth := Max(65, Min(90, Width - 2 * padding - 300))
+    inputWidth := Width - buttonWidth - padding * 3
+
+    ChatInput.Move(padding, inputY, inputWidth, inputHeight)
+    ChatSendBtn.Move(Width - padding - buttonWidth, inputY, buttonWidth, buttonHeight)
+}
+
+#HotIf WinActive("内网拼音群聊")
+$Enter:: {
+    if (ChatIsReady && ChatInput != "") {
+        if (IsChatIMEComposing())
+            return
+        OnSendChatMessage()
+    }
+}
+#HotIf
+
+OnSendChatMessage(*) {
+    global ChatInput, ChatNickName, ChatLastSentText, ChatLastSentTick, ChatMessages
+
+    text := Trim(ChatInput.Value, "`r`n ")
+    if (text = "")
+        return
+
+    text := RegExReplace(text, "[\r\n]+", " ")
+    ChatInput.Value := ""
+    ChatInput.Focus()
+
+    if !SendChatUdpMessage(ChatNickName, text) {
+        ChatInput.Value := text
+        ChatInput.Focus()
+        MsgBox("消息发送失败，请检查局域网连接。", "发送失败")
+        return
+    }
+
+    ChatLastSentText := text
+    ChatLastSentTick := A_TickCount
+    AddChatMessage(ChatNickName, text)
+    SaveChatHistory()
+    RefreshWebChat()
+}
+
+OnChangeChatNameClick(*) {
+    global ChatNickName, ChatConfigFile, ChatGui
+
+    modal := Gui("-MinimizeBox -MaximizeBox +Owner" ChatGui.Hwnd, "更换群聊昵称")
+    modal.SetFont("s10", "Microsoft YaHei")
+    modal.Add("Text", "x15 y15", "请输入新的群聊昵称：")
+    input := modal.Add("Edit", "x15 y+8 w260", ChatNickName)
+    btn := modal.Add("Button", "x175 y+12 w100 Default", "保存")
+    btn.OnEvent("Click", (*) => SaveChatName(modal, input.Value))
+    modal.Show("w290 h115")
+}
+
+SaveChatName(modal, value) {
+    global ChatNickName, ChatConfigFile, ChatGui
+
+    value := Trim(value)
+    if (value = "") {
+        MsgBox("昵称不能为空。", "提示")
+        return
+    }
+
+    ChatNickName := value
+    try IniWrite(ChatNickName, ChatConfigFile, "UserInfo", "Nickname")
+    ChatGui["ChatNameText"].Value := "当前昵称: " ChatNickName
+    modal.Destroy()
+    RefreshWebChat()
+}
+
+ReceiveChatData(wParam, lParam, msg, hwnd) {
+    global ChatListenSocket, ChatNickName, ChatLastSentText, ChatLastSentTick
+
+    event := lParam & 0xFFFF
+    error := (lParam >> 16) & 0xFFFF
+    if (error != 0 || event != 1)
+        return
+
+    buf := Buffer(65536, 0)
+    addr := Buffer(16, 0)
+    addrLen := Buffer(4, 0)
+    NumPut("Int", 16, addrLen, 0)
+
+    bytes := DllCall("Ws2_32\recvfrom", "Ptr", ChatListenSocket, "Ptr", buf, "Int", 65536, "Int", 0, "Ptr", addr, "Ptr", addrLen, "Int")
+    if (bytes <= 0)
+        return
+
+    data := StrGet(buf, bytes, "UTF-8")
+    parts := StrSplit(data, "|||", , 2)
+    if (parts.Length != 2 || parts[1] = "" || parts[2] = "")
+        return
+    if (parts[1] = ChatNickName && parts[2] = ChatLastSentText && (A_TickCount - ChatLastSentTick) < 3000)
+        return
+
+    AddChatMessage(parts[1], parts[2])
+    SaveChatHistory()
+    RefreshWebChat()
+}
+
+SendChatUdpMessage(sender, text) {
+    global ChatListenSocket, ChatPort
+    data := sender "|||" text
+    addr := Buffer(16, 0)
+    NumPut("UShort", 2, addr, 0)
+    NumPut("UShort", DllCall("Ws2_32\htons", "UShort", ChatPort, "UShort"), addr, 2)
+    NumPut("UInt", DllCall("Ws2_32\inet_addr", "AStr", "255.255.255.255"), addr, 4)
+
+    buf := Buffer(StrPut(data, "UTF-8"), 0)
+    size := StrPut(data, buf, "UTF-8") - 1
+
+    Loop 3 {
+        sent := DllCall("Ws2_32\sendto", "Ptr", ChatListenSocket, "Ptr", buf, "Int", size, "Int", 0, "Ptr", addr, "Int", 16)
+        if (sent = size)
+            return true
+        Sleep(50)
+    }
+    return false
+}
+
+AddChatMessage(sender, text) {
+    global ChatMessages
+
+    sender := StrReplace(sender, "`r", "")
+    sender := StrReplace(sender, "`n", " ")
+    text := StrReplace(text, "`r", "")
+    text := StrReplace(text, "`n", " ")
+    if (text = "")
+        return
+
+    ChatMessages.Push({sender: sender, text: text, html: BuildChatPinyinHtml(text), translated: true})
+    if (ChatMessages.Length > ChatHistoryLimit)
+        ChatMessages.RemoveAt(1, ChatMessages.Length - ChatHistoryLimit)
+}
+
+LoadChatHistory() {
+    global ChatMessages, ChatLogFile, ChatHistoryLimit
+
+    if !FileExist(ChatLogFile)
+        return
+
+    try content := FileRead(ChatLogFile, "UTF-8")
+    catch
+        return
+
+    for line in StrSplit(content, "`n", "`r") {
+        if (Trim(line) = "")
+            continue
+        parts := StrSplit(line, "`t", , 3)
+        if (parts.Length = 2 && parts[1] != "" && parts[2] != "") {
+            ChatMessages.Push({sender: parts[1], text: parts[2], html: BuildChatPinyinHtml(parts[2]), translated: true})
+            continue
+        }
+        if (parts.Length = 3 && parts[1] != "" && parts[2] != "" && parts[3] != "")
+            ChatMessages.Push({sender: parts[1], text: parts[2], html: parts[3], translated: true})
+    }
+    if (ChatMessages.Length > ChatHistoryLimit)
+        ChatMessages.RemoveAt(1, ChatMessages.Length - ChatHistoryLimit)
+}
+
+SaveChatHistory() {
+    global ChatMessages, ChatHistoryFile, ChatLogFile
+
+    if (ChatHistoryFile = "" || ChatMessages.Length = 0)
+        return
+
+    ChatHistoryFile.Close()
+    try ChatHistoryFile := FileOpen(ChatLogFile, "w", "UTF-8")
+    catch
+        return
+
+    for message in ChatMessages {
+        if (IsObject(message) && message.text != "")
+            ChatHistoryFile.WriteLine(message.sender "`t" message.text "`t" message.html)
+    }
+    ChatHistoryFile.Close()
+    ChatHistoryFile := FileOpen(ChatLogFile, "a", "UTF-8")
+}
+
+BuildChatPinyinHtml(text) {
+    global InputTemp, OutputTemp, PyScript, PyExe, DictFile, ChatMessages
+
+    if (text = "")
+        return ""
+
+    try {
+        FileOpen(InputTemp, "w", "UTF-8").Write(text)
+        FileOpen(OutputTemp, "w", "UTF-8").Write("")
+         if FileExist(PyExe)
+            RunWait('"' PyExe '"', A_ScriptDir, "Hide")
+        else if FileExist(PyScript)
+            RunWait(A_ComSpec ' /c python "' PyScript '"', A_ScriptDir, "Hide")
+        else {
+            MsgBox("未找到 Python 转译引擎，请确保 dist 文件夹存在或安装了 Python。", "转译失败")
+            return
+        }
+
+        if !FileExist(OutputTemp)
+            throw Error("拼音引擎未生成结果")
+
+        result := FileRead(OutputTemp, "UTF-8")
+        chars := []
+        pinyins := []
+        pos := 1
+        while RegExMatch(result, "m)^([^\t\r\n]+)\t([^\t\r\n]*)", &m, pos) {
+            pos := m.Pos + m.Len
+            chars.Push(m[1])
+            pinyins.Push(m[2] = "" ? m[1] : m[2])
+        }
+        if (chars.Length = 0)
+            return BuildChatPlainHtml(text)
+
+        ApplyCustomPinyinDict(chars, pinyins)
+        html := ""
+        for i, ch in chars {
+            if (ch = " ")
+                html .= "<span class='word-box'><span class='py-cell'>&nbsp;</span><span class='ch-cell'>&nbsp;</span></span>"
+            else
+                html .= "<span class='word-box'><span class='py-cell'>" HtmlEncode(pinyins[i]) "</span><span class='ch-cell'>" HtmlEncode(ch) "</span></span>"
+        }
+        return html
+    } catch {
+        return BuildChatPlainHtml(text, "拼音处理错误")
+    }
+}
+
+BuildChatPlainHtml(text, error := "") {
+    html := "<span class='plain-text'>" HtmlEncode(text) "</span>"
+    if (error != "")
+        html .= "<div style='color:#B00020;font-size:11px'>" error "</div>"
+    return html
+}
+
+RefreshWebChat() {
+    global ChatMessages, ChatWB, ChatNickName, ChatLastRenderHtml
+
+    if (ChatWB = "")
+        return
+
+    body := ""
+    for message in ChatMessages {
+        name := HtmlEncode(message.sender)
+        if (message.sender = ChatNickName)
+            name .= " (我)"
+        htmlText := message.html
+        if (htmlText = "")
+            htmlText := BuildChatPlainHtml(message.text)
+        body .= "<div class='msg-row'><div class='sender-name'>" name "</div><div class='msg-bubble'>" htmlText "</div></div>"
+    }
+
+    html := "<!DOCTYPE html><html><head><meta http-equiv='X-UA-Compatible' content='IE=edge'><meta charset='utf-8'><style>"
+    html .= "html,body{margin:0;padding:0;background:#F5F7FA;font-family:'Microsoft YaHei',sans-serif;font-size:14px;overflow-x:hidden;}body{box-sizing:border-box;padding:10px;}"
+    html .= ".msg-row{display:flex;flex-direction:column;margin-bottom:14px;width:100%;}.sender-name{font-size:1rem;color:#777;margin-bottom:4px;padding:0 4px;font-weight:bold;}.msg-bubble{display:inline-block;max-width:92%;padding:7px;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.04);word-wrap:break-word;align-self:flex-start;background:#FFF;border:1px solid #E4E7ED;color:#333;border-top-left-radius:2px;}.word-box{display:inline-flex;flex-direction:column;vertical-align:bottom;text-align:center;margin:2px 4px 4px;min-width:24px;line-height:1;}.py-cell{display:block;font-size:1.1rem;color:#0066CC;font-family:'Courier New',sans-serif;font-weight:bold;line-height:1.1;height:1.1em;white-space:nowrap;}.ch-cell{display:block;font-size:1.2rem;color:#2C3E50;line-height:1.15;font-weight:500;white-space:nowrap;}.plain-text{font-size:1.45rem;line-height:1.4;white-space:pre-wrap;}</style></head><body>" body
+    html .= "<script>window.onload=function(){window.scrollTo(0,document.body.scrollHeight);};</script></body></html>"
+
+    if (html != ChatLastRenderHtml) {
+        ChatLastRenderHtml := html
+        file := A_ScriptDir "\chat_layout_temp.html"
+        try {
+            FileOpen(file, "w", "UTF-8").Write(html)
+            ChatWB.Navigate(file)
+        } catch {
+            try {
+                ChatWB.Navigate("about:blank")
+                ChatWB.Document.Write(html)
+                ChatWB.Document.Close()
+            }
+        }
+    }
+}
+
+IsChatIMEComposing() {
+    hwnd := WinExist("A")
+    if !hwnd
+        return false
+    himc := DllCall("imm32\ImmGetContext", "Ptr", hwnd, "Ptr")
+    if !himc
+        return false
+    len := DllCall("imm32\ImmGetCompositionString", "Ptr", himc, "UInt", 0x0008, "Ptr", 0, "UInt", 0, "Int")
+    DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", himc)
+    return len > 0
+}
+
+CleanUpChat(quitApp := true) {
+    global ChatHistoryFile, ChatListenSocket, ChatSocketDLL, ChatGui, ChatIsReady
+
+    if (ChatHistoryFile != "") {
+        ChatHistoryFile.Close()
+        ChatHistoryFile := ""
+    }
+    if (ChatListenSocket != 0) {
+        DllCall("Ws2_32\closesocket", "Ptr", ChatListenSocket, "Ptr")
+        ChatListenSocket := 0
+    }
+    if (ChatSocketDLL != 0) {
+        DllCall("FreeLibrary", "Ptr", ChatSocketDLL)
+        ChatSocketDLL := 0
+    }
+    if (ChatGui != "") {
+        ChatGui.Destroy()
+        ChatGui := ""
+    }
+    ChatIsReady := false
+    if (quitApp)
+        ExitApp()
+}
+
+HtmlEncode(text) {
+    text := StrReplace(text, "&", "&amp;")
+    text := StrReplace(text, "<", "&lt;")
+    text := StrReplace(text, ">", "&gt;")
+    text := StrReplace(text, '"', "&quot;")
+    text := StrReplace(text, "'", "&#39;")
+    return text
 }
