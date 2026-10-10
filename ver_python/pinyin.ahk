@@ -5,6 +5,7 @@
 global G_RawChars := []       
 global G_RawPinyins := []     
 global G_UserTyped := []      
+global G_ImeComposing := false
 global PracticeGui := ""      
 global WB := ""               
 global StudyGui := ""         
@@ -17,10 +18,9 @@ global WebControl := ""
 global TypeCollector := ""     
 global SaveFile := A_ScriptDir "\progress_save.ini" 
 global DictFile := A_ScriptDir "\custom_pinyin.txt"  ; Custom pinyin dictionary path
-global InputTemp := A_ScriptDir "\dist\input_temp.txt"
 ;替换
 global InputTemp := A_ScriptDir "\input_temp.txt"
-;global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
+;global InputTemp := A_ScriptDir "\dist\input_temp.txt"
 global OutputTemp := A_ScriptDir "\output_temp.txt"
 ;global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
 global PyScript := A_ScriptDir "\pinyin_core.py"
@@ -48,6 +48,18 @@ global ChatPort := 28911
 global ChatHistoryLimit := 1000
 global ChatNickName := ""
 global DownloadDictUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/custom_pinyin.txt"  ; Leave blank and fill in the actual dictionary download URL later
+global VocabularyUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/2.txt"
+global VocabularyFile := A_ScriptDir "\vocabulary.txt"
+global VocabularyGui := ""
+global VocabularyBtn := ""
+global VocabularyWords := []
+global VocabularyIndex := 1
+global VocabularySourceText := ""
+global VocabularyProgressText := ""
+global VocabularyWordText := ""
+global VocabularyPrevBtn := ""
+global VocabularyEditBtn := ""
+global VocabularyNextBtn := ""
 
 ; --- 【UI Optimization】Redistributed heights to grant Web Layout more room ---
 global ScaleFactor := A_ScreenDPI / 96  
@@ -315,28 +327,32 @@ CreatePracticeWindow() {
     StudyBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "📖 生字练习")
     StudyBtn.OnEvent("Click", OnStudyModeClick)
 
-    ToggleModeBtn := PracticeGui.Add("Button", "w" BtnW " h" BtnH " x+20 yp vToggleModeBtn", "🔤 拼音模式")
-    ToggleModeBtn.OnEvent("Click", OnToggleModeClick)
-
     global ChatBtn
     ChatBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "💬 聊天")
     ChatBtn.OnEvent("Click", OnOpenChatClick)
 
-    global DictDownloadBtn
-    DictDownloadBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "📥 下载多音字字典")
-    DictDownloadBtn.OnEvent("Click", OnDownloadDictionaryClick)
+    global VocabularyBtn
+    VocabularyBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "🗂 词汇模式")
+    VocabularyBtn.OnEvent("Click", OnVocabularyModeClick)
+
+    ToggleModeBtn := PracticeGui.Add("Button", "w" BtnW " h" BtnH " x+12 yp vToggleModeBtn", "🔤 汉字模式")
+    ToggleModeBtn.OnEvent("Click", OnToggleModeClick)
 
     PracticeGui.OnEvent("Close", OnGuiClose)
     PracticeGui.OnEvent("Size", OnPracticeGuiResize)
 
     OnMessage(0x0006, WM_ACTIVATE)
+    OnMessage(0x010D, OnImeStartComposition)
+    OnMessage(0x010E, OnImeEndComposition)
 
+    OnPracticeGuiResize(PracticeGui, 0, GuiW, GuiH, false)
     PracticeGui.Show("w" GuiW " h" GuiH)
     TypeCollector.Focus()
 }
 
-OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight) {
+OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight, refreshGrid := true) {
     global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, TitleText, WebControl, TypeCollector
+    global ChatBtn, VocabularyBtn
 
     if (PracticeGui == "" || WB == "")
         return
@@ -345,15 +361,17 @@ OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight) {
     GuiH := Max(NewHeight, 320)
 
     contentW := Max(300, GuiW - 30)
-    leftBtnW := Max(100, Min(180, Integer(contentW * 0.22)))
     gap := Max(8, Integer(contentW * 0.015))
-    toggleBtnW := Max(100, Min(180, Integer(contentW * 0.24)))
+    buttons := [PracticeGui["Button1"], PracticeGui["Button2"], ChatBtn, VocabularyBtn, PracticeGui["ToggleModeBtn"]]
+    columns := Min(buttons.Length, Max(1, Floor((contentW + gap) / (140 + gap))))
+    buttonW := Floor((contentW - gap * (columns - 1)) / columns)
+    buttonRows := Ceil(buttons.Length / columns)
 
     WebW := Max(270, GuiW - 30)
-    WebH := Max(120, Integer(GuiH * 0.72))
     EditH := Max(28, Integer(GuiH * 0.07))
-    BtnW := Max(100, Min(180, Integer(GuiW * 0.20)))
     BtnH := Max(30, Integer(GuiH * 0.05))
+    availableWebH := GuiH - 45 - 10 - EditH - 10 - buttonRows * BtnH - (buttonRows - 1) * gap - 15
+    WebH := Max(120, Min(Integer(GuiH * 0.72), availableWebH))
 
     TitleText.Move(15, 15, contentW, 25)
     WebControl.Move(15, 45, WebW, WebH)
@@ -361,22 +379,16 @@ OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight) {
 
     TypeCollector.GetPos(&inputX, &inputY, &inputW, &inputH)
     inputBottomY := inputY + inputH
-    buttonY := Integer((inputBottomY + GuiH) / 2 - BtnH / 2)
-    buttonY := Max(buttonY, inputBottomY + 10)
+    buttonY := inputBottomY + 10
 
-    NewTextBtnX := 15
-    StudyBtnX := NewTextBtnX + leftBtnW + gap
-    ToggleBtnX := StudyBtnX + leftBtnW + gap
-    ChatBtnX := ToggleBtnX + toggleBtnW + gap
-    DictBtnX := ChatBtnX + leftBtnW + gap
+    for index, button in buttons {
+        column := Mod(index - 1, columns)
+        row := Floor((index - 1) / columns)
+        button.Move(15 + column * (buttonW + gap), buttonY + row * (BtnH + gap), buttonW, BtnH)
+    }
 
-    PracticeGui["Button1"].Move(NewTextBtnX, buttonY, leftBtnW, BtnH)
-    PracticeGui["Button2"].Move(StudyBtnX, buttonY, leftBtnW, BtnH)
-    PracticeGui["Button3"].Move(ToggleBtnX, buttonY, toggleBtnW, BtnH)
-    ChatBtn.Move(ChatBtnX, buttonY, leftBtnW, BtnH)
-    DictDownloadBtn.Move(DictBtnX, buttonY, leftBtnW, BtnH)
-
-    RefreshWebGrid()
+    if refreshGrid
+        RefreshWebGrid()
 }
 
 WM_ACTIVATE(wParam, lParam, msg, hwnd) {
@@ -415,16 +427,48 @@ OnTextChanged(CtrlObj, *) {
 }
 
 IsIMEComposing() {
-    hwnd := WinExist("A")
-    if !hwnd
-        return false
-    himc := DllCall("imm32\ImmGetContext", "Ptr", hwnd, "Ptr")
-    if !himc
-        return false
-    len := DllCall("imm32\ImmGetCompositionString", "Ptr", himc, "UInt", 0x0008, "Ptr", 0, "UInt", 0, "Int") 
-    DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", himc)
-    return len > 0
+    global G_ImeComposing, TypeCollector, PracticeGui
+    if G_ImeComposing
+        return true
+
+    focusHwnd := DllCall("GetFocus", "Ptr")
+    hwnds := [focusHwnd]
+    if (TypeCollector != "")
+        hwnds.Push(TypeCollector.Hwnd)
+    if (PracticeGui != "")
+        hwnds.Push(PracticeGui.Hwnd)
+
+    for hwnd in hwnds {
+        if !hwnd
+            continue
+
+        himc := DllCall("imm32\ImmGetContext", "Ptr", hwnd, "Ptr")
+        if !himc
+            continue
+
+        len := DllCall("imm32\ImmGetCompositionStringW", "Ptr", himc, "UInt", 0x0008, "Ptr", 0, "UInt", 0, "Int")
+        DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", himc)
+        if (len > 0)
+            return true
+    }
+
+    return false
 }
+
+
+
+OnImeStartComposition(wParam, lParam, msg, hwnd) {
+    global G_ImeComposing, TypeCollector, PracticeGui
+    if (TypeCollector != "" && (hwnd == TypeCollector.Hwnd || hwnd == PracticeGui.Hwnd))
+        G_ImeComposing := true
+}
+
+OnImeEndComposition(wParam, lParam, msg, hwnd) {
+    global G_ImeComposing, TypeCollector, PracticeGui
+    if (TypeCollector != "" && (hwnd == TypeCollector.Hwnd || hwnd == PracticeGui.Hwnd))
+        G_ImeComposing := false
+}
+
 #HotIf WinActive("姐儿妹儿拼音练习器")
 ~LButton:: {
     global PracticeGui
@@ -437,13 +481,20 @@ IsIMEComposing() {
 }
 
 $Backspace:: {
-    global G_UserTyped
+    global G_UserTyped, TypeCollector
+
+    focusHwnd := DllCall("GetFocus", "Ptr")
+    if (TypeCollector == "" || focusHwnd != TypeCollector.Hwnd) {
+        Send("{Backspace}")
+        return
+    }
     
     if IsIMEComposing() {
         Send("{Backspace}")
         return
     }
     
+    ; Only delete from your exercise progress if there is actually text inside the box to delete
     if (G_UserTyped.Length > 0) {
         G_UserTyped.Pop() 
         RefreshWebGrid()   
@@ -519,9 +570,9 @@ OnImportNewTextClick(*) {
     global PracticeGui, G_CurrentOriginalText
     
     modalW := Max(420, Min(620, GuiW))
-    modalH := Max(260, Min(360, GuiH))
+    modalH := Max(300, Min(410, GuiH))
     inputW := modalW - 30
-    inputH := Max(120, modalH - 112)
+    inputH := Max(120, modalH - 160)
 
     ModalGui := Gui("-MinimizeBox -MaximizeBox +Owner" PracticeGui.Hwnd, "导入新文章")
     ModalGui.SetFont("s11", "Microsoft YaHei")
@@ -543,6 +594,9 @@ OnImportNewTextClick(*) {
         Sleep(100),
         ProcessAndStart(txt, "", true)
     ))
+
+    DictDownloadBtn := ModalGui.Add("Button", "w" inputW " h36 x15 y" (buttonY + 48), "📥 下载多音字字典")
+    DictDownloadBtn.OnEvent("Click", OnDownloadDictionaryClick)
     ModalGui.Show("w" modalW " h" modalH)
 }
 
@@ -579,6 +633,180 @@ OnStudyModeClick(*) {
     CreateStudyWindow()
     PracticeGui.Hide()
     StudyGui.Show("w" GuiW " h" GuiH)
+}
+
+OnVocabularyModeClick(*) {
+    global PracticeGui, VocabularyGui, VocabularyFile, VocabularySourceText, VocabularyWords, VocabularyIndex, GuiW, GuiH
+
+    if (VocabularyGui != "") {
+        PracticeGui.Hide()
+        VocabularyGui.Show()
+        return
+    }
+
+    if FileExist(VocabularyFile) {
+        try VocabularySourceText := FileRead(VocabularyFile, "UTF-8")
+        catch {
+            VocabularySourceText := ""
+        }
+    }
+    VocabularyWords := ParseVocabularyWords(VocabularySourceText)
+    VocabularyIndex := 1
+    CreateVocabularyWindow()
+    PracticeGui.Hide()
+    VocabularyGui.Show("w" GuiW " h" GuiH)
+}
+
+ParseVocabularyWords(text) {
+    words := []
+    normalizedText := RegExReplace(text, "[ \t\r\n]+", "`n")
+    Loop Parse, normalizedText, "`n" {
+        word := Trim(A_LoopField)
+        if (word != "")
+            words.Push(word)
+    }
+    return words
+}
+
+CreateVocabularyWindow() {
+    global VocabularyGui, VocabularyProgressText, VocabularyWordText
+    global VocabularyPrevBtn, VocabularyEditBtn, VocabularyNextBtn, VocabularyWords, GuiW, GuiH, FontSize
+
+    VocabularyGui := Gui("+Resize -DPIScale", "词汇模式 · 词汇卡片")
+    VocabularyGui.SetFont("s" FontSize + 4, "Microsoft YaHei")
+    VocabularyProgressText := VocabularyGui.Add("Text", "x15 y20 w" (GuiW - 30) " h35 Center", "")
+
+    VocabularyGui.SetFont("s48 Bold", "Microsoft YaHei")
+    VocabularyWordText := VocabularyGui.Add("Text", "x30 y70 w" (GuiW - 60) " h" (GuiH - 170) " Center 0x200", "")
+
+    VocabularyGui.SetFont("s12", "Microsoft YaHei")
+    VocabularyPrevBtn := VocabularyGui.Add("Button", "x15 y" (GuiH - 70) " w100 h40", "上一词")
+    VocabularyPrevBtn.OnEvent("Click", (*) => MoveVocabularyCard(-1))
+    VocabularyEditBtn := VocabularyGui.Add("Button", "x+12 yp w150 h40", "编辑词表")
+    VocabularyEditBtn.OnEvent("Click", OnEditVocabularyClick)
+    VocabularyNextBtn := VocabularyGui.Add("Button", "x+12 yp w100 h40", "下一词")
+    VocabularyNextBtn.OnEvent("Click", (*) => MoveVocabularyCard(1))
+
+    VocabularyGui.OnEvent("Size", OnVocabularyGuiResize)
+    VocabularyGui.OnEvent("Close", OnReturnFromVocabularyMode)
+    RefreshVocabularyCard()
+}
+
+OnVocabularyGuiResize(GuiObj, MinMax, NewWidth, NewHeight) {
+    global VocabularyGui, VocabularyProgressText, VocabularyWordText
+    global VocabularyPrevBtn, VocabularyEditBtn, VocabularyNextBtn
+    global GuiW, GuiH
+
+    if (MinMax = -1)
+        return
+
+    GuiW := Max(NewWidth, 380)
+    GuiH := Max(NewHeight, 320)
+    buttonY := GuiH - 70
+    buttonW := Max(100, Floor((GuiW - 54) / 3))
+    buttonGap := 12
+
+    VocabularyProgressText.Move(15, 20, GuiW - 30, 35)
+    VocabularyWordText.Move(30, 70, GuiW - 60, GuiH - 170)
+    VocabularyPrevBtn.Move(15, buttonY, buttonW, 40)
+    VocabularyEditBtn.Move(15 + buttonW + buttonGap, buttonY, buttonW, 40)
+    VocabularyNextBtn.Move(15 + (buttonW + buttonGap) * 2, buttonY, buttonW, 40)
+    RefreshVocabularyCard()
+}
+
+MoveVocabularyCard(step) {
+    global VocabularyWords, VocabularyIndex
+
+    if (VocabularyWords.Length = 0)
+        return
+
+    VocabularyIndex += step
+    if (VocabularyIndex < 1)
+        VocabularyIndex := VocabularyWords.Length
+    else if (VocabularyIndex > VocabularyWords.Length)
+        VocabularyIndex := 1
+    RefreshVocabularyCard()
+}
+
+RefreshVocabularyCard() {
+    global VocabularyWords, VocabularyIndex, VocabularyProgressText, VocabularyWordText, GuiW, GuiH
+
+    if (VocabularyWords.Length = 0) {
+        VocabularyProgressText.Text := "0 / 0"
+        VocabularyWordText.Text := "暂无词汇"
+        return
+    }
+
+    word := VocabularyWords[VocabularyIndex]
+    VocabularyProgressText.Text := VocabularyIndex " / " VocabularyWords.Length
+    VocabularyWordText.Text := word
+    wordFont := Max(22, Min(112, Integer(Min((GuiH - 170) * 0.30, (GuiW - 100) * 0.72 / Max(1, StrLen(word))))))
+    VocabularyWordText.SetFont("s" wordFont " Bold", "Microsoft YaHei")
+}
+
+OnEditVocabularyClick(*) {
+    global VocabularyGui, VocabularySourceText, GuiW, GuiH
+
+    editorW := Max(500, Min(760, GuiW))
+    editorH := Max(340, Min(500, GuiH))
+    editor := Gui("-MinimizeBox -MaximizeBox +Owner" VocabularyGui.Hwnd, "编辑词汇表")
+    editor.SetFont("s11", "Microsoft YaHei")
+    editor.Add("Text", "x15 y15", "词汇之间用空格分隔：")
+    input := editor.Add("Edit", "x15 y45 w" (editorW - 30) " h" (editorH - 105) " +Multi", VocabularySourceText)
+    buttonY := editorH - 50
+
+    importBtn := editor.Add("Button", "x15 y" buttonY " w180 h34", "🌐 从 GitHub 导入")
+    importBtn.OnEvent("Click", (*) => ImportVocabularyFromGitHub(input))
+    saveBtn := editor.Add("Button", "x+12 yp w220 h34 Default", "保存并更新卡片")
+    saveBtn.OnEvent("Click", (*) => SaveVocabularyList(editor, input.Value))
+    editor.Show("w" editorW " h" editorH)
+}
+
+ImportVocabularyFromGitHub(input) {
+    global VocabularyUrl
+
+    try {
+        whr := ComObject("WinHttp.WinHttpRequest.5.1")
+        whr.Open("GET", VocabularyUrl, true)
+        whr.Send()
+        if (!whr.WaitForResponse(10))
+            throw Error("连接超时")
+        if (whr.Status != 200)
+            throw Error("HTTP 状态错误: " whr.Status)
+        if (Trim(whr.ResponseText) = "")
+            throw Error("词汇文件内容为空")
+        input.Value := whr.ResponseText
+    } catch Error as err {
+        MsgBox("GitHub 词汇导入失败。`n请检查网络和文件地址：`n" VocabularyUrl "`n`n" err.Message, "导入失败")
+    }
+}
+
+SaveVocabularyList(editor, text) {
+    global VocabularyFile, VocabularySourceText, VocabularyWords, VocabularyIndex
+
+    try {
+        if FileExist(VocabularyFile)
+            FileDelete(VocabularyFile)
+        FileAppend(text, VocabularyFile, "UTF-8")
+        VocabularySourceText := text
+        VocabularyWords := ParseVocabularyWords(text)
+        VocabularyIndex := 1
+        RefreshVocabularyCard()
+        editor.Destroy()
+    } catch Error as err {
+        MsgBox("保存词汇表失败：`n" err.Message, "保存失败")
+    }
+}
+
+OnReturnFromVocabularyMode(*) {
+    global PracticeGui, VocabularyGui, GuiW, GuiH
+
+    if (VocabularyGui != "")
+        VocabularyGui.Hide()
+    if (PracticeGui != "") {
+        PracticeGui.Show("w" GuiW " h" GuiH)
+        PracticeGui["TypedInput"].Focus()
+    }
 }
 
 GetUniqueStudyChars() {
@@ -786,7 +1014,7 @@ OnToggleModeClick(CtrlObj, *) {
     if (G_PinyinOnlyMode) {
         CtrlObj.Text := "✨ 正常模式" 
     } else {
-        CtrlObj.Text := "🔤 拼音模式"
+        CtrlObj.Text := "🔤 汉字模式"
     }
     
     RefreshWebGrid() 
@@ -813,8 +1041,8 @@ RefreshWebGrid() {
             chDisp := "&nbsp;"
             pyDisp := "&nbsp;"
         } else {
-            chDisp := G_PinyinOnlyMode ? "&nbsp;" : ch
-            pyDisp := py
+            chDisp := ch
+            pyDisp := G_PinyinOnlyMode ? "&nbsp;" : py
         }
         
         if (idx <= typedLength) {
@@ -896,7 +1124,7 @@ RefreshWebGrid() {
 ; � Dictionary download
 ; =========================================================================
 OnDownloadDictionaryClick(*) {
-    global DownloadDictUrl
+    global DownloadDictUrl, DictFile
 
     if (Trim(DownloadDictUrl) == "") {
         MsgBox("请先在脚本顶部设置 DownloadDictUrl，再点击下载多音字字典。", "下载地址未配置")
