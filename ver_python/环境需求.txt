@@ -1,0 +1,13 @@
+1， 环境需求
+
+pip install pypinyin
+
+
+
+2， 编译命令
+
+pyinstaller --onedir --noconsole --clean pinyin_core.py
+
+
+
+

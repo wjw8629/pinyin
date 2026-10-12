@@ -1,5 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
+;@Ahk2Exe-SetVersion 1.0.0.0
 
 ; --- Global State Variables ---
 global G_RawChars := []       
@@ -13,15 +14,16 @@ global StudyNextBtn := ""
 global StudyIndexText := ""  
 global StudyCharText := ""    
 global TitleText := ""        
+global UpdateBtn := ""
 global WebControl := ""       
 global TypeCollector := ""     
 global SaveFile := A_ScriptDir "\progress_save.ini" 
 global DictFile := A_ScriptDir "\custom_pinyin.txt"  ; Custom pinyin dictionary path
 ;替换
-global InputTemp := A_ScriptDir "\input_temp.txt"
-;global InputTemp := A_ScriptDir "\dist\input_temp.txt"
-global OutputTemp := A_ScriptDir "\output_temp.txt"
-;global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
+;global InputTemp := A_ScriptDir "\input_temp.txt"
+global InputTemp := A_ScriptDir "\dist\input_temp.txt"
+;global OutputTemp := A_ScriptDir "\output_temp.txt"
+global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
 global PyScript := A_ScriptDir "\pinyin_core.py"
 global PyExe := A_ScriptDir "\dist\pinyin_core\pinyin_core.exe"
 global G_PinyinOnlyMode := false            
@@ -46,8 +48,10 @@ global ChatConfigFile := A_ScriptDir "\chat_config.ini"
 global ChatPort := 28911
 global ChatHistoryLimit := 1000
 global ChatNickName := ""
-global DownloadDictUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/custom_pinyin.txt"  ; Leave blank and fill in the actual dictionary download URL later
-global VocabularyUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/2.txt"
+global GitHubTextUrl
+global DownloadDictUrl
+global SourceConfigFile := A_ScriptDir "\source_config.ini"
+global VocabularyUrl
 global VocabularyFile := A_ScriptDir "\vocabulary.txt"
 global VocabularyGui := ""
 global VocabularyBtn := ""
@@ -78,8 +82,33 @@ global FontSize := Integer(Max(10, GuiH * 0.016))   ; Reduced interface font sca
 InitMainProgram()
 
 InitMainProgram() {
+    global GitHubTextUrl, DownloadDictUrl, VocabularyUrl, SourceConfigFile
     savedText := ""
     savedBuffer := ""
+
+    try {
+        sourceDefaults := Map(
+            "GitHubTextUrl", "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/1.txt",
+            "DownloadDictUrl", "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/custom_pinyin.txt",
+            "VocabularyUrl", "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/2.txt"
+        )
+        for sourceKey, defaultUrl in sourceDefaults {
+            sourceUrl := IniRead(SourceConfigFile, "Sources", sourceKey, "")
+            if (sourceUrl = "") {
+                sourceUrl := defaultUrl
+                IniWrite(sourceUrl, SourceConfigFile, "Sources", sourceKey)
+            }
+
+            switch sourceKey {
+                case "GitHubTextUrl": GitHubTextUrl := sourceUrl
+                case "DownloadDictUrl": DownloadDictUrl := sourceUrl
+                case "VocabularyUrl": VocabularyUrl := sourceUrl
+            }
+        }
+    } catch Error as err {
+        MsgBox("初始化源地址配置失败：`n" err.Message, "配置错误")
+        return
+    }
     
     ; 🚀 Auto-Generate Dictionary File if Missing
     if !FileExist(DictFile) {
@@ -104,6 +133,28 @@ InitMainProgram() {
     CreatePracticeWindow()
     ProcessAndStart(savedText, savedBuffer, false) 
 }
+
+CheckForUpdates(*) {
+    updaterPath := A_ScriptDir "\updater.bat"
+    
+    if !FileExist(updaterPath) {
+        MsgBox("【错误】未找到更新脚本！`n`n预期路径: " updaterPath, "更新失败", "Iconx")
+        return
+    }
+
+    ; 显式引用 cmd.exe，并按 cmd /c 的规则包裹 bat 路径。
+    cmdCommand := '"' A_ComSpec '" /d /c ""' updaterPath '""'
+
+    try {
+        Run(cmdCommand, A_ScriptDir, "Hide")
+        
+        ToolTip("🚀 版本更新中，更新完毕会自动重启软件")
+        SetTimer(() => ToolTip(), -2000)
+    } catch Error as err {
+        MsgBox("❌ 无法拉起 bat 文件！`n`n系统错误原因: " err.Message "`n错误代码: " err.Extra, "启动失败", "Iconx")
+    }
+}
+
 
 ; =========================================================================
 ; Core Processing and Python Communication Chain
@@ -307,35 +358,38 @@ ConvertNumToTone(py) {
 ; Percentage GUI Layout
 ; =========================================================================
 CreatePracticeWindow() {
-    global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, FontSize, TitleText, WebControl, TypeCollector
+    global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, FontSize, TitleText, UpdateBtn, WebControl, TypeCollector
+    global ChatBtn, VocabularyBtn, NewTextBtn, StudyBtn, ToggleModeBtn ; 💖 显式声明全局或局部控件变量
     
     PracticeGui := Gui("+Resize -DPIScale", "姐儿妹儿拼音练习器")
     PracticeGui.SetFont("s" FontSize, "Microsoft YaHei")
 
     TitleText := PracticeGui.Add("Text", "x15 y15", "⌨️ 请在下方敲击键盘进行对照练习：")
-    WebControl := PracticeGui.Add("ActiveX", "w" WebW " h" WebH " x15 y+10", "Shell.Explorer")
+    WebControl := PracticeGui.Add("ActiveX", "w" WebW " h" WebH " x15 y45", "Shell.Explorer")
     WB := WebControl.Value
 
     TypeCollector := PracticeGui.Add("Edit", "w" WebW " h" EditH " x15 y+10 vTypedInput")
     TypeCollector.OnEvent("Change", OnTextChanged)
 
     LeftBtnW := Integer(BtnW * 0.9)
+    ; 💖 核心修复：为所有按钮赋予明确的变量指针，拒绝匿名创建
     NewTextBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x15 y+10", "🔄 导入新文章")
     NewTextBtn.OnEvent("Click", OnImportNewTextClick)
 
     StudyBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "📖 生字练习")
     StudyBtn.OnEvent("Click", OnStudyModeClick)
 
-    global ChatBtn
     ChatBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "💬 聊天")
     ChatBtn.OnEvent("Click", OnOpenChatClick)
 
-    global VocabularyBtn
     VocabularyBtn := PracticeGui.Add("Button", "w" LeftBtnW " h" BtnH " x+12 yp", "🗂 词汇模式")
     VocabularyBtn.OnEvent("Click", OnVocabularyModeClick)
 
-    ToggleModeBtn := PracticeGui.Add("Button", "w" BtnW " h" BtnH " x+12 yp vToggleModeBtn", "🔤 汉字模式")
+    ToggleModeBtn := PracticeGui.Add("Button", "w" BtnW " h" BtnH " x+12 yp", "🔤 汉字模式")
     ToggleModeBtn.OnEvent("Click", OnToggleModeClick)
+
+    UpdateBtn := PracticeGui.Add("Button", "x" (GuiW - 115) " y15 w100 h25", "检查更新")
+    UpdateBtn.OnEvent("Click", CheckForUpdates)
 
     PracticeGui.OnEvent("Close", OnGuiClose)
     PracticeGui.OnEvent("Size", OnPracticeGuiResize)
@@ -347,9 +401,10 @@ CreatePracticeWindow() {
     TypeCollector.Focus()
 }
 
+
 OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight, refreshGrid := true) {
-    global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, TitleText, WebControl, TypeCollector
-    global ChatBtn, VocabularyBtn
+    global PracticeGui, WB, GuiW, GuiH, WebW, WebH, EditH, BtnW, BtnH, TitleText, UpdateBtn, WebControl, TypeCollector
+    global ChatBtn, VocabularyBtn, NewTextBtn, StudyBtn, ToggleModeBtn
 
     if (PracticeGui == "" || WB == "")
         return
@@ -359,7 +414,10 @@ OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight, refreshGrid := true) {
 
     contentW := Max(300, GuiW - 30)
     gap := Max(8, Integer(contentW * 0.015))
-    buttons := [PracticeGui["Button1"], PracticeGui["Button2"], ChatBtn, VocabularyBtn, PracticeGui["ToggleModeBtn"]]
+    
+    ; 💖 核心修复：直接通过明确的对象指针进行网格注册，彻底杜绝 "Button1"、"Button2" 的序号错位
+    buttons := [NewTextBtn, StudyBtn, ChatBtn, VocabularyBtn, ToggleModeBtn]
+    
     columns := Min(buttons.Length, Max(1, Floor((contentW + gap) / (140 + gap))))
     buttonW := Floor((contentW - gap * (columns - 1)) / columns)
     buttonRows := Ceil(buttons.Length / columns)
@@ -370,7 +428,8 @@ OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight, refreshGrid := true) {
     availableWebH := GuiH - 45 - 10 - EditH - 10 - buttonRows * BtnH - (buttonRows - 1) * gap - 15
     WebH := Max(120, Min(Integer(GuiH * 0.72), availableWebH))
 
-    TitleText.Move(15, 15, contentW, 25)
+    TitleText.Move(15, 15, Max(180, contentW - 115), 25)
+    UpdateBtn.Move(GuiW - 115, 15, 100, 25)
     WebControl.Move(15, 45, WebW, WebH)
     TypeCollector.Move(15, 45 + WebH + 10, WebW, EditH)
 
@@ -387,6 +446,7 @@ OnPracticeGuiResize(GuiObj, MinMax, NewWidth, NewHeight, refreshGrid := true) {
     if refreshGrid
         RefreshWebGrid()
 }
+
 
 WM_ACTIVATE(wParam, lParam, msg, hwnd) {
     global PracticeGui
@@ -438,10 +498,18 @@ IsIMEComposing() {
 
 #HotIf WinActive("姐儿妹儿拼音练习器")
 ~LButton:: {
-    global PracticeGui
+    global PracticeGui, NewTextBtn, StudyBtn, ChatBtn, VocabularyBtn, ToggleModeBtn, UpdateBtn
     if (PracticeGui != "") {
-        MouseGetPos ,, &clickedHwnd, &clickedCtrl
-        if (clickedCtrl != "Button1" && clickedCtrl != "Button2" && clickedCtrl != "Button3" && clickedCtrl != "Button4" && clickedCtrl != "Button5") {
+        MouseGetPos(,,, &clickedHwnd, 2)
+        mainButtons := [NewTextBtn, StudyBtn, ChatBtn, VocabularyBtn, ToggleModeBtn, UpdateBtn]
+        isMainButton := false
+        for button in mainButtons {
+            if (clickedHwnd = button.Hwnd) {
+                isMainButton := true
+                break
+            }
+        }
+        if !isMainButton {
             SetTimer(() => (PracticeGui != "" ? PracticeGui["TypedInput"].Focus() : ""), -20)
         }
     }
@@ -490,13 +558,8 @@ OnGuiClose(*) {
 }
 
 OnUrlTextClick(ModalGui := "") {
-    global PracticeGui
-    targetUrl := "https://raw.githubusercontent.com/wjw8629/pinyin/refs/heads/main/1.txt"
-    
-    if (InStr(targetUrl, "您的用户名")) {
-        MsgBox("请先右键编辑 AHK 脚本，将代码中 [OnUrlTextClick] 函数内的 targetUrl 修改为您真实的 GitHub 纯文本直链再使用哦！", "提示")
-        return
-    }
+    global PracticeGui, GitHubTextUrl
+    targetUrl := GitHubTextUrl
     
     ToolTip("🌐 正在从云端拉取最新练习文章，请稍候...")
     
@@ -537,9 +600,9 @@ OnImportNewTextClick(*) {
     global PracticeGui, G_CurrentOriginalText
     
     modalW := Max(420, Min(620, GuiW))
-    modalH := Max(300, Min(410, GuiH))
+    modalH := Max(252, Min(362, GuiH - 48))
     inputW := modalW - 30
-    inputH := Max(120, modalH - 160)
+    inputH := Max(120, modalH - 112)
 
     ModalGui := Gui("-MinimizeBox -MaximizeBox +Owner" PracticeGui.Hwnd, "导入新文章")
     ModalGui.SetFont("s11", "Microsoft YaHei")
@@ -547,12 +610,17 @@ OnImportNewTextClick(*) {
     NewInputField := ModalGui.Add("Edit", "w" inputW " h" inputH " x15 y+10 vNewInputText +Multi", G_CurrentOriginalText)
 
     NewInputField.GetPos(&inputX, &inputY, &inputW, &inputH)
-    buttonW := Max(120, Min(150, Integer((modalW - 42) / 2)))
+    buttonW := Max(110, Min(150, Integer((modalW - 54) / 3)))
     buttonGap := 12
     buttonY := inputY + inputH + 12
 
     GitHubBtn := ModalGui.Add("Button", "w" buttonW " h36 x15 y" buttonY, "🌐 从 GitHub 导入")
     GitHubBtn.OnEvent("Click", (*) => OnUrlTextClick(ModalGui))
+    GitHubBtn.OnEvent("ContextMenu", (*) => EditSourceUrl("GitHubTextUrl", "GitHub 文章源"))
+
+    DictDownloadBtn := ModalGui.Add("Button", "w" buttonW " h36 x+" buttonGap " yp", "📥 下载多音字字典")
+    DictDownloadBtn.OnEvent("Click", OnDownloadDictionaryClick)
+    DictDownloadBtn.OnEvent("ContextMenu", (*) => EditSourceUrl("DownloadDictUrl", "多音字字典源"))
 
     ConfirmBtn := ModalGui.Add("Button", "w" buttonW " h36 x+" buttonGap " yp Default", "⚡ 确认更换")
     ConfirmBtn.OnEvent("Click", (*) => (
@@ -561,10 +629,41 @@ OnImportNewTextClick(*) {
         Sleep(100),
         ProcessAndStart(txt, "", true)
     ))
-
-    DictDownloadBtn := ModalGui.Add("Button", "w" inputW " h36 x15 y" (buttonY + 48), "📥 下载多音字字典")
-    DictDownloadBtn.OnEvent("Click", OnDownloadDictionaryClick)
     ModalGui.Show("w" modalW " h" modalH)
+}
+
+EditSourceUrl(sourceKey, sourceLabel) {
+    global GitHubTextUrl, DownloadDictUrl, VocabularyUrl, SourceConfigFile
+
+    switch sourceKey {
+        case "GitHubTextUrl": currentUrl := GitHubTextUrl
+        case "DownloadDictUrl": currentUrl := DownloadDictUrl
+        case "VocabularyUrl": currentUrl := VocabularyUrl
+        default: return
+    }
+    result := InputBox("请输入新的 " sourceLabel "（HTTP/HTTPS 地址）：", "修改源", "w520", currentUrl)
+    if (result.Result != "OK")
+        return
+
+    newUrl := Trim(result.Value)
+    if !RegExMatch(newUrl, "^https?://") {
+        MsgBox("请输入以 http:// 或 https:// 开头的有效地址。", "地址无效")
+        return
+    }
+
+    try {
+        IniWrite(newUrl, SourceConfigFile, "Sources", sourceKey)
+        switch sourceKey {
+        case "GitHubTextUrl":
+            GitHubTextUrl := newUrl
+        case "DownloadDictUrl":
+            DownloadDictUrl := newUrl
+        case "VocabularyUrl":
+            VocabularyUrl := newUrl
+        }
+    } catch Error as err {
+        MsgBox("保存源地址失败：`n" err.Message, "保存失败")
+    }
 }
 
 OnStudyModeClick(*) {
@@ -724,6 +823,7 @@ OnEditVocabularyClick(*) {
 
     importBtn := editor.Add("Button", "x15 y" buttonY " w180 h34", "🌐 从 GitHub 导入")
     importBtn.OnEvent("Click", (*) => ImportVocabularyFromGitHub(input))
+    importBtn.OnEvent("ContextMenu", (*) => EditSourceUrl("VocabularyUrl", "词汇表源"))
     saveBtn := editor.Add("Button", "x+12 yp w220 h34 Default", "保存并更新卡片")
     saveBtn.OnEvent("Click", (*) => SaveVocabularyList(editor, input.Value))
     editor.Show("w" editorW " h" editorH)
