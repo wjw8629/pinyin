@@ -1,9 +1,10 @@
 # 姐儿妹儿拼音练习器 
-# (Pinyin Typing Practice)
+## (Pinyin Typing Practice)
 <br>
 
 ## 中文不易，多加努力 ：）
 <br>
+
 \# 给外国出生的孩子学中文设计<br>
 
 \# 他们的学习路径和国内的孩子以及学习中文的外国人不同<br>
