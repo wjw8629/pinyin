@@ -1,33 +1,15 @@
 \# ⌨️ 姐儿妹儿拼音练习器 (Pinyin Typing Practice)
 
+<br>
+
 \# ======= 中文不易，多加努力 ：）=======
 
 <br>
 
-
-
-\#1， 编译命令
-
-
-
-&#x20; pyinstaller --onedir --noconsole --clean pinyin_core.py
-
-
-
-<br>
-
-
-
-\#2，修改以下，ahk里面搜索“替换”
-
-
-&#x20;   ;global InputTemp := A_ScriptDir "\input_temp.txt"
-
-&#x20;   global InputTemp := A_ScriptDir "\dist\input_temp.txt"
-
-&#x20;   ;global OutputTemp := A_ScriptDir "\output_temp.txt"
-
-&#x20;   global OutputTemp := A_ScriptDir "\dist\output_temp.txt"
+给外国出生的孩子学中文设计<br>
+他们的学习路径和国内的孩子以及学习中文的外国人不同<br>
+他们听的懂，所以不需要像外国人一样基础的听力练习<br>
+他们日常极少使用中文，所以国内孩子的成长曲线不适用于他们<br>
 
 
 
