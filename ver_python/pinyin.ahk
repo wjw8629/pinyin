@@ -5,7 +5,6 @@
 global G_RawChars := []       
 global G_RawPinyins := []     
 global G_UserTyped := []      
-global G_ImeComposing := false
 global PracticeGui := ""      
 global WB := ""               
 global StudyGui := ""         
@@ -342,8 +341,6 @@ CreatePracticeWindow() {
     PracticeGui.OnEvent("Size", OnPracticeGuiResize)
 
     OnMessage(0x0006, WM_ACTIVATE)
-    OnMessage(0x010D, OnImeStartComposition)
-    OnMessage(0x010E, OnImeEndComposition)
 
     OnPracticeGuiResize(PracticeGui, 0, GuiW, GuiH, false)
     PracticeGui.Show("w" GuiW " h" GuiH)
@@ -426,47 +423,17 @@ OnTextChanged(CtrlObj, *) {
     RefreshWebGrid()
 }
 
+
 IsIMEComposing() {
-    global G_ImeComposing, TypeCollector, PracticeGui
-    if G_ImeComposing
-        return true
-
-    focusHwnd := DllCall("GetFocus", "Ptr")
-    hwnds := [focusHwnd]
-    if (TypeCollector != "")
-        hwnds.Push(TypeCollector.Hwnd)
-    if (PracticeGui != "")
-        hwnds.Push(PracticeGui.Hwnd)
-
-    for hwnd in hwnds {
-        if !hwnd
-            continue
-
-        himc := DllCall("imm32\ImmGetContext", "Ptr", hwnd, "Ptr")
-        if !himc
-            continue
-
-        len := DllCall("imm32\ImmGetCompositionStringW", "Ptr", himc, "UInt", 0x0008, "Ptr", 0, "UInt", 0, "Int")
-        DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", himc)
-        if (len > 0)
-            return true
-    }
-
-    return false
-}
-
-
-
-OnImeStartComposition(wParam, lParam, msg, hwnd) {
-    global G_ImeComposing, TypeCollector, PracticeGui
-    if (TypeCollector != "" && (hwnd == TypeCollector.Hwnd || hwnd == PracticeGui.Hwnd))
-        G_ImeComposing := true
-}
-
-OnImeEndComposition(wParam, lParam, msg, hwnd) {
-    global G_ImeComposing, TypeCollector, PracticeGui
-    if (TypeCollector != "" && (hwnd == TypeCollector.Hwnd || hwnd == PracticeGui.Hwnd))
-        G_ImeComposing := false
+    hwnd := WinExist("A")
+    if !hwnd
+        return false
+    himc := DllCall("imm32\ImmGetContext", "Ptr", hwnd, "Ptr")
+    if !himc
+        return false
+    len := DllCall("imm32\ImmGetCompositionString", "Ptr", himc, "UInt", 0x0008, "Ptr", 0, "UInt", 0, "Int")
+    DllCall("imm32\ImmReleaseContext", "Ptr", hwnd, "Ptr", himc)
+    return len > 0
 }
 
 #HotIf WinActive("姐儿妹儿拼音练习器")
