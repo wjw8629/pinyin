@@ -23,11 +23,13 @@
             min-height: 100vh;
             min-height: 100dvh;
             overflow-x: hidden;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
+            overflow: hidden;
         }
         /* Main structural wrapper */
         .container {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100vh;
             height: 100dvh;
@@ -36,11 +38,6 @@
             display: -webkit-flex;
             flex-direction: column;
             -webkit-flex-direction: column;
-        }
-        /* Allow the browser to scroll the focused input above an overlay keyboard. */
-        .container:focus-within {
-            margin-bottom: 40vh;
-            margin-bottom: 40dvh;
         }
         /* Navigation Header */
         .header {
@@ -187,6 +184,7 @@
 
         function updateKeyboardLayout() {
             var currentHeight = visualViewport ? visualViewport.height : window.innerHeight;
+            containerEl.style.top = (visualViewport ? visualViewport.offsetTop : 0) + 'px';
             containerEl.style.height = currentHeight + 'px';
 
             if (initialHeight - currentHeight > 150) {
@@ -199,12 +197,12 @@
         window.addEventListener('resize', updateKeyboardLayout);
         if (visualViewport) {
             visualViewport.addEventListener('resize', updateKeyboardLayout);
+            visualViewport.addEventListener('scroll', updateKeyboardLayout);
         }
 
         textareaEl.addEventListener('focus', function() {
             setTimeout(function() {
                 updateKeyboardLayout();
-                textareaEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
             }, 300);
         });
     </script>
