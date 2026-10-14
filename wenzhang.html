@@ -11,12 +11,20 @@
             margin: 0;
             padding: 0;
         }
+        html {
+            min-height: 100%;
+        }
         body, html {
             width: 100%;
-            height: 100%;
-            overflow: hidden;
             background-color: #f5f7fa;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        body {
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow-x: hidden;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         /* Main structural wrapper */
         .container {
@@ -28,6 +36,11 @@
             display: -webkit-flex;
             flex-direction: column;
             -webkit-flex-direction: column;
+        }
+        /* Allow the browser to scroll the focused input above an overlay keyboard. */
+        .container:focus-within {
+            margin-bottom: 40vh;
+            margin-bottom: 40dvh;
         }
         /* Navigation Header */
         .header {
@@ -191,7 +204,8 @@
         textareaEl.addEventListener('focus', function() {
             setTimeout(function() {
                 updateKeyboardLayout();
-            }, 150);
+                textareaEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }, 300);
         });
     </script>
 </body>
