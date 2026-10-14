@@ -1,0 +1,60 @@
+name: 处理汉字文本去重
+
+on:
+  # 允许你在 GitHub 页面上手动点击运行 (Run workflow)
+  workflow_dispatch:
+  # 如果你希望每次修改 current.txt 并提交时自动运行，可以取消下面三行的注释：
+  # push:
+  #   paths:
+  #     - 'current.txt'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 允许自动化脚本提交代码回你的仓库
+
+    steps:
+    - name: 检出仓库代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: 提取汉字并去重
+      run: |
+      python - <<'PY'
+      import unicodedata
+
+        input_file = 'current.txt'  # 你自己粘贴的短文文件名
+        output_file = '1.txt'
+
+      with open(input_file, 'r', encoding='utf-8') as source:
+        content = source.read()
+
+      chinese_chars = []
+      for character in content:
+        name = unicodedata.name(character, '')
+        if character == '\u3007' or name.startswith((
+          'CJK UNIFIED IDEOGRAPH-',
+          'CJK COMPATIBILITY IDEOGRAPH-',
+        )):
+          chinese_chars.append(character)
+
+      # 保留首次出现顺序，并以空格分隔。
+      unique_chars = list(dict.fromkeys(chinese_chars))
+      with open(output_file, 'w', encoding='utf-8') as result:
+        result.write(' '.join(unique_chars))
+
+      print(f'成功处理！共提取出 {len(unique_chars)} 个不重复的汉字。')
+      PY
+
+    - name: 自动提交并推送到仓库
+      run: |
+        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add 1.txt
+        # 只有在 1.txt 发生变化时才提交，防止报错
+        git diff --cached --quiet || (git commit -m "自动更新 1.txt 汉字字卡文件" && git push)
