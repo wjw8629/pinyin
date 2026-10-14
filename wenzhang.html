@@ -21,7 +21,9 @@
         /* Main structural wrapper */
         .container {
             width: 100%;
-            height: 100%;
+            height: 100vh;
+            height: 100dvh;
+            min-height: 0;
             display: flex;
             display: -webkit-flex;
             flex-direction: column;
@@ -57,8 +59,9 @@
         }
         /* Reading Section: shrinks intelligently when keyboard opens */
         .text-display-box {
-            flex: 1;
-            -webkit-flex: 1;
+            flex: 1 1 0;
+            -webkit-flex: 1 1 0;
+            min-height: 0;
             width: 100%;
             background: #ffffff;
             padding: 20px;
@@ -76,7 +79,10 @@
         }
         /* Input container area */
         .input-box-container {
-            height: 35%; /* Default distribution */
+            flex: 0 0 42%;
+            -webkit-flex: 0 0 42%;
+            height: auto;
+            min-height: 0;
             width: 100%;
             background: #f8fafc;
             padding: 12px;
@@ -106,13 +112,16 @@
         /* ----------------------------------------------------
            DYNAMIC KEYBOARD CLASSES (Triggered by JavaScript)
            ---------------------------------------------------- */
-        /* When keyboard is active, give the textarea container priority */
+        /* Keep the input visible while the visual viewport shrinks for the keyboard. */
         .keyboard-active .text-display-box {
-            flex: 0 1 40%; /* Let reading text compress down to 40% if needed */
-            padding: 10px 20px; /* Slimmer padding to optimize space */
+            flex: 1 1 0;
+            -webkit-flex: 1 1 0;
+            padding: 8px 16px;
         }
         .keyboard-active .input-box-container {
-            height: 60%; /* Give the input field the dominant remaining space */
+            flex: 0 0 clamp(120px, 38%, 220px);
+            -webkit-flex: 0 0 clamp(120px, 38%, 220px);
+            height: auto;
             padding: 8px;
         }
     </style>
@@ -160,38 +169,29 @@
                 console.error(err);
             });
 
-        /* ========================================================
-           INTELLIGENT ANDROID KEYBOARD ADAPTATION LOGIC
-           ======================================================== */
-        // Store the initial window height on load
-        var initialHeight = window.innerHeight;
+        var visualViewport = window.visualViewport;
+        var initialHeight = visualViewport ? visualViewport.height : window.innerHeight;
 
-        window.addEventListener('resize', function() {
-            // Android soft keyboard shrinks the window.innerHeight considerably
-            var currentHeight = window.innerHeight;
-            
-            // If the screen height drops by more than 150px, the keyboard is open
+        function updateKeyboardLayout() {
+            var currentHeight = visualViewport ? visualViewport.height : window.innerHeight;
+            containerEl.style.height = currentHeight + 'px';
+
             if (initialHeight - currentHeight > 150) {
                 containerEl.classList.add('keyboard-active');
-                
-                // Automatically scroll the active cursor into view cleanly after resize layout finishes
-                setTimeout(function() {
-                    textareaEl.scrollIntoView({ block: "end", behavior: "smooth" });
-                }, 50);
             } else {
-                // Keyboard closed -> Restore layout split
                 containerEl.classList.remove('keyboard-active');
             }
-        });
+        }
 
-        // Fail-safe focus/blur handlers if resize calculation is slightly off on older OS versions
+        window.addEventListener('resize', updateKeyboardLayout);
+        if (visualViewport) {
+            visualViewport.addEventListener('resize', updateKeyboardLayout);
+        }
+
         textareaEl.addEventListener('focus', function() {
-            // Ensure layout smoothly scoots down text if window resize acts lazy
             setTimeout(function() {
-                if (window.innerHeight < initialHeight) {
-                    containerEl.classList.add('keyboard-active');
-                }
-            }, 100);
+                updateKeyboardLayout();
+            }, 150);
         });
     </script>
 </body>
