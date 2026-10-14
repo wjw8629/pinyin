@@ -2,7 +2,6 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <!-- 增强移动端适配标签，防止双击缩放干扰点击事件 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
     <title>字卡认知</title>
     <style>
@@ -26,12 +25,31 @@
             width: 100%;
             height: 100%;
             display: flex;
-            display: -webkit-flex; /* 兼容旧版内核的Flex布局 */
+            display: -webkit-flex; 
             justify-content: center;
             align-items: center;
             flex-direction: column;
             -webkit-flex-direction: column;
         }
+        
+        /* 【新增】网页跳转链接样式 */
+        .nav-box {
+            position: absolute;
+            top: 4%;
+            right: 5%;
+            z-index: 30; /* 确保在任何热区之上，保证可正常点击 */
+        }
+        .nav-btn {
+            font-size: 13px;
+            color: #3498db;
+            text-decoration: none;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid #3498db;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
         /* 字卡样式 */
         .card {
             font-weight: bold;
@@ -47,12 +65,9 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.08);
             transition: transform 0.1s ease;
             -webkit-transition: -webkit-transform 0.1s ease;
-            
-            /* 【核心修复】废弃 min() 函数，改用绝对安全的响应式字体大小 */
             font-size: 32vw; 
         }
         
-        /* 当屏幕很大（如平板或横屏）时，限制最大字体为 150px，替代 min() */
         @media screen and (min-width: 480px) {
             .card {
                 font-size: 150px;
@@ -63,6 +78,7 @@
         .progress {
             position: absolute;
             top: 5%;
+            left: 5%; /* 移到左侧防止撞上右侧的切换按钮 */
             font-size: 16px;
             color: #7f8c8d;
             background: rgba(255,255,255,0.8);
@@ -79,7 +95,6 @@
             z-index: 10;
             cursor: pointer;
             -webkit-tap-highlight-color: transparent;
-            /* 确保透明区域在旧内核中依然能稳定接收点击 */
             background: rgba(0, 0, 0, 0); 
         }
         .left-zone { left: 0; }
@@ -108,6 +123,12 @@
 
     <div class="container">
         <div class="progress" id="progress">加载中...</div>
+        
+        <!-- 【新增按钮】跳转至文章网页 -->
+        <div class="nav-box">
+            <a href="wenzhang.html" class="nav-btn">切换到文章</a>
+        </div>
+
         <div class="card" id="card">...</div>
         <div class="toast" id="toast">已经是第一个字了</div>
         
@@ -117,7 +138,6 @@
     </div>
 
     <script>
-        // 使用更保守、兼容性最佳的传统 ES5/ES6 语法
         var chars = [];
         var currentIndex = 0;
 
@@ -126,27 +146,19 @@
         var toastEl = document.getElementById('toast');
         var timer = null;
 
-        // 强化的弹出提示框函数，解决旧内核异步渲染可能被跳过的问题
         function showToast(message) {
             if (timer) {
                 clearTimeout(timer);
             }
             toastEl.textContent = message;
-            // 移除 show 样式
             toastEl.classList.remove('show');
-            
-            // 触发底层浏览器强制重绘（Reflow），确保连续点击时提示百分之百刷新
             var reflow = toastEl.offsetHeight; 
-            
-            // 重新添加 show 样式显示
             toastEl.classList.add('show');
-            
             timer = setTimeout(function() { 
                 toastEl.classList.remove('show'); 
             }, 1800);
         }
 
-        // Fisher-Yates 随机打乱算法
         function shuffle(array) {
             for (var i = array.length - 1; i > 0; i--) {
                 var j = Math.floor(Math.random() * (i + 1));
@@ -157,7 +169,6 @@
             return array;
         }
 
-        // 更新界面显示
         function updateCard() {
             if (chars.length === 0) {
                 cardEl.textContent = "空";
@@ -168,7 +179,6 @@
             progressEl.textContent = (currentIndex + 1) + " / " + chars.length;
         }
 
-        // 初始化：读取 zika.txt
         fetch('zika.txt?v=' + Date.now())
             .then(function(response) {
                 if (!response.ok) throw new Error('未找到 zika.txt 文件');
@@ -179,7 +189,7 @@
                     return c.length > 0;
                 });
                 if (chars.length > 0) {
-                    chars = shuffle(chars); // 随机打乱
+                    chars = shuffle(chars);
                     currentIndex = 0;
                     updateCard();
                 } else {
@@ -192,9 +202,8 @@
                 console.error(err);
             });
 
-        // 左半屏点击：上一页
         document.getElementById('btn-prev').addEventListener('click', function(e) {
-            if (e) e.preventDefault(); // 阻止部分安卓浏览器的默认缩放双击行为
+            if (e) e.preventDefault();
             if (currentIndex > 0) {
                 currentIndex--;
                 updateCard();
@@ -203,9 +212,8 @@
             }
         });
 
-        // 右半屏点击：下一页
         document.getElementById('btn-next').addEventListener('click', function(e) {
-            if (e) e.preventDefault(); // 阻止部分安卓浏览器的默认缩放双击行为
+            if (e) e.preventDefault();
             if (currentIndex < chars.length - 1) {
                 currentIndex++;
                 updateCard();
