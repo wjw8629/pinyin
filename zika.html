@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>字卡认知</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f5f7fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        /* 主容器 */
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        /* 字卡样式 */
+        .card {
+            font-size: min(35vw, 150px);
+            font-weight: bold;
+            color: #2c3e50;
+            background: #ffffff;
+            width: 85%;
+            height: 60%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            transition: transform 0.1s ease;
+        }
+        /* 进度提示 */
+        .progress {
+            position: absolute;
+            top: 5%;
+            font-size: 16px;
+            color: #7f8c8d;
+            background: rgba(255,255,255,0.8);
+            padding: 6px 16px;
+            border-radius: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+        }
+        /* 交互热区：左半屏和右半屏 */
+        .click-zone {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 50%;
+            z-index: 10;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .left-zone { left: 0; }
+        .right-zone { right: 0; }
+        
+        /* 悬浮边缘提示（Toast） */
+        .toast {
+            position: absolute;
+            bottom: 8%;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 20;
+        }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="progress" id="progress">加载中...</div>
+        <div class="card" id="card">...</div>
+        <div class="toast" id="toast">已经是第一个字了</div>
+        
+        <!-- 左右点击触发区域 -->
+        <div class="click-zone left-zone" id="btn-prev"></div>
+        <div class="click-zone right-zone" id="btn-next"></div>
+    </div>
+
+    <script>
+        let chars = [];
+        let currentIndex = 0;
+
+        const cardEl = document.getElementById('card');
+        const progressEl = document.getElementById('progress');
+        const toastEl = document.getElementById('toast');
+
+        // 弹出提示框函数
+        function showToast(message) {
+            toastEl.textContent = message;
+            toastEl.classList.add('show');
+            setTimeout(() => toastEl.classList.remove('show'), 1500);
+        }
+
+        // Fisher-Yates 随机打乱算法
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // 更新界面显示
+        function updateCard() {
+            if (chars.length === 0) {
+                cardEl.textContent = "空";
+                progressEl.textContent = "0 / 0";
+                return;
+            }
+            cardEl.textContent = chars[currentIndex];
+            progressEl.textContent = `${currentIndex + 1} / ${chars.length}`;
+        }
+
+        // 初始化：读取 zika.txt
+        // 加上时间戳清缓存：'zika.txt?v=' + Date.now()
+        fetch('zika.txt?v=' + Date.now())
+            .then(response => {
+                if (!response.ok) throw new Error('未找到 zika.txt 文件');
+                return response.text();
+            })
+            .then(text => {
+                // 按空格拆分并过滤掉空字符
+                chars = text.trim().split(/\s+/).filter(c => c.length > 0);
+                if (chars.length > 0) {
+                    chars = shuffle(chars); // 随机打乱
+                    currentIndex = 0;
+                    updateCard();
+                } else {
+                    cardEl.textContent = "无汉字";
+                }
+            })
+            .catch(err => {
+                cardEl.textContent = "错误";
+                progressEl.textContent = "请检查 zika.txt";
+                console.error(err);
+            });
+
+        // 左半屏点击：上一页
+        document.getElementById('btn-prev').addEventListener('click', () => {
+            if (currentIndex > 0) {
+                currentIndex--;
+                updateCard();
+            } else {
+                showToast("已经是第一个字了！");
+            }
+        });
+
+        // 右半屏点击：下一页
+        document.getElementById('btn-next').addEventListener('click', () => {
+            if (currentIndex < chars.length - 1) {
+                currentIndex++;
+                updateCard();
+            } else {
+                showToast("已经是最后一个字了，太棒了！");
+            }
+        });
+    </script>
+</body>
+</html>

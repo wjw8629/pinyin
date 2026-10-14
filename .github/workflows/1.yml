@@ -30,7 +30,7 @@ jobs:
         import unicodedata
 
         input_file = 'current.txt'  # 你自己粘贴的短文文件名
-        output_file = '1.txt'
+        output_file = 'zika.txt'
 
         if not os.path.exists(input_file):
             print(f"错误：在主目录下没有找到 '{input_file}' 文件，请先创建它并粘贴短文。")
@@ -61,6 +61,6 @@ jobs:
       run: |
         git config --local user.email "41898282+github-actions[bot]@://github.com"
         git config --local user.name "github-actions[bot]"
-        git add 1.txt
-        # 只有在 1.txt 发生变化时才提交，防止报错
-        git diff --cached --quiet || (git commit -m "自动更新 1.txt 汉字字卡文件" && git push)
+        git add zika.txt
+        # 只有在 zika.txt 发生变化时才提交，防止报错
+        git diff --cached --quiet || (git commit -m "自动更新 zika.txt 汉字字卡文件" && git push)
