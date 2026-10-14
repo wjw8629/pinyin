@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <!-- Essential viewport tags to prevent erratic zoom on input focus -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
     <title>文章阅读与输入</title>
     <style>
@@ -17,7 +18,7 @@
             background-color: #f5f7fa;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
-        /* Page Layout Split */
+        /* Main structural wrapper */
         .container {
             width: 100%;
             height: 100%;
@@ -26,7 +27,7 @@
             flex-direction: column;
             -webkit-flex-direction: column;
         }
-        /* Top Navigation Header */
+        /* Navigation Header */
         .header {
             width: 100%;
             height: 50px;
@@ -54,7 +55,7 @@
             border-radius: 6px;
             background: transparent;
         }
-        /* Top Section: Text Display */
+        /* Reading Section: shrinks intelligently when keyboard opens */
         .text-display-box {
             flex: 1;
             -webkit-flex: 1;
@@ -62,24 +63,26 @@
             background: #ffffff;
             padding: 20px;
             overflow-y: auto;
-            -webkit-overflow-scrolling: touch; /* Smooth scrolling for old iOS/Android */
+            -webkit-overflow-scrolling: touch;
             border-bottom: 2px dashed #cbd5e1;
+            transition: all 0.15s ease-out; /* Smooth transition when resizing */
         }
         .text-content {
-            font-size: 20px; /* Highly legible size for reading */
+            font-size: 20px;
             line-height: 1.6;
             color: #2c3e50;
-            white-space: pre-wrap; /* Keeps line breaks from the txt file */
+            white-space: pre-wrap;
             word-wrap: break-word;
         }
-        /* Bottom Section: Text Input Area */
+        /* Input container area */
         .input-box-container {
-            height: 35%; /* Fixed percentage allocation */
+            height: 35%; /* Default distribution */
             width: 100%;
             background: #f8fafc;
             padding: 12px;
             flex-shrink: 0;
             -webkit-flex-shrink: 0;
+            transition: all 0.15s ease-out;
         }
         .custom-textarea {
             width: 100%;
@@ -90,23 +93,36 @@
             background-color: #ffffff;
             border: 1px solid #cbd5e1;
             border-radius: 12px;
-            resize: none; /* Disables drag resizing handles */
+            resize: none;
             outline: none;
             box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
+            -webkit-appearance: none; /* Removes native mobile styling overrides */
         }
         .custom-textarea:focus {
             border-color: #3498db;
             box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
         }
+
+        /* ----------------------------------------------------
+           DYNAMIC KEYBOARD CLASSES (Triggered by JavaScript)
+           ---------------------------------------------------- */
+        /* When keyboard is active, give the textarea container priority */
+        .keyboard-active .text-display-box {
+            flex: 0 1 40%; /* Let reading text compress down to 40% if needed */
+            padding: 10px 20px; /* Slimmer padding to optimize space */
+        }
+        .keyboard-active .input-box-container {
+            height: 60%; /* Give the input field the dominant remaining space */
+            padding: 8px;
+        }
     </style>
 </head>
 <body>
 
-    <div class="container">
+    <div class="container" id="main-container">
         <!-- Top Nav Bar -->
         <div class="header">
             <span class="header-title">文章查看</span>
-            <!-- Back to Index link -->
             <a href="zika.html" class="nav-link">切换到字卡</a>
         </div>
 
@@ -123,8 +139,10 @@
 
     <script>
         var articleEl = document.getElementById('article-content');
+        var containerEl = document.getElementById('main-container');
+        var textareaEl = document.getElementById('user-input');
 
-        // Dynamically fetch current.txt with cache busting
+        // Fetch current.txt with cache busting
         fetch('current.txt?v=' + Date.now())
             .then(function(response) {
                 if (!response.ok) throw new Error('未找到 current.txt 文件');
@@ -141,6 +159,40 @@
                 articleEl.textContent = "加载错误，请检查服务器上是否存在 current.txt 文件。";
                 console.error(err);
             });
+
+        /* ========================================================
+           INTELLIGENT ANDROID KEYBOARD ADAPTATION LOGIC
+           ======================================================== */
+        // Store the initial window height on load
+        var initialHeight = window.innerHeight;
+
+        window.addEventListener('resize', function() {
+            // Android soft keyboard shrinks the window.innerHeight considerably
+            var currentHeight = window.innerHeight;
+            
+            // If the screen height drops by more than 150px, the keyboard is open
+            if (initialHeight - currentHeight > 150) {
+                containerEl.classList.add('keyboard-active');
+                
+                // Automatically scroll the active cursor into view cleanly after resize layout finishes
+                setTimeout(function() {
+                    textareaEl.scrollIntoView({ block: "end", behavior: "smooth" });
+                }, 50);
+            } else {
+                // Keyboard closed -> Restore layout split
+                containerEl.classList.remove('keyboard-active');
+            }
+        });
+
+        // Fail-safe focus/blur handlers if resize calculation is slightly off on older OS versions
+        textareaEl.addEventListener('focus', function() {
+            // Ensure layout smoothly scoots down text if window resize acts lazy
+            setTimeout(function() {
+                if (window.innerHeight < initialHeight) {
+                    containerEl.classList.add('keyboard-active');
+                }
+            }, 100);
+        });
     </script>
 </body>
 </html>
