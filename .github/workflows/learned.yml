@@ -20,7 +20,7 @@ jobs:
         python-version: '3.x'
 
     - name: 运行合并脚本
-      run: python merge_words.py
+      run: python learned.py
 
     - name: 提交更新后的文件
       run: |
