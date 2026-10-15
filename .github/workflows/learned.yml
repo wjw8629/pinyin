@@ -1,4 +1,4 @@
-name: 自动合并单字
+name: 已学汉字汇总
 
 on:
   push:

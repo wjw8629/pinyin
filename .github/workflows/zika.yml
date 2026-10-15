@@ -1,4 +1,4 @@
-name: 处理汉字文本去重
+name: 网页字卡
 
 on:
   # 允许你在 GitHub 页面上手动点击运行 (Run workflow)
