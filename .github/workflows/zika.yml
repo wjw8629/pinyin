@@ -51,10 +51,17 @@ jobs:
 
         # 保留首次出现顺序，并以空格分隔
         unique_chars = list(dict.fromkeys(chinese_chars))
-        with open(output_file, 'w', encoding='utf-8') as result:
-            result.write(' '.join(unique_chars))
+        learned_file = 'learned.txt'
+        learned_chars = set()
+        if os.path.exists(learned_file):
+          with open(learned_file, 'r', encoding='utf-8') as learned:
+            learned_chars.update(learned.read().split())
 
-        print(f'成功处理！共提取出 {len(unique_chars)} 个不重复的汉字。')
+        new_chars = [character for character in unique_chars if character not in learned_chars]
+        with open(output_file, 'w', encoding='utf-8') as result:
+          result.write(' '.join(new_chars))
+
+        print(f'成功处理！共提取出 {len(new_chars)} 个未学过的不重复汉字。')
         PY
 
     - name: 自动提交并推送到仓库
