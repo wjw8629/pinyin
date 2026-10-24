@@ -1,4 +1,4 @@
-name: 网页字卡
+name: 更新
 
 on:
   # 允许你在 GitHub 页面上手动点击运行 (Run workflow)
@@ -23,7 +23,7 @@ jobs:
       with:
         python-version: '3.x'
 
-    - name: 提取汉字并去重
+    - name: 提取汉字、去重并更新已学记录
       run: |
         python - <<'PY'
         import os
@@ -52,22 +52,34 @@ jobs:
         # 保留首次出现顺序，并以空格分隔
         unique_chars = list(dict.fromkeys(chinese_chars))
         learned_file = 'learned.txt'
-        learned_chars = set()
+        learned_words = []
         if os.path.exists(learned_file):
           with open(learned_file, 'r', encoding='utf-8') as learned:
-            learned_chars.update(learned.read().split())
+            lines = learned.readlines()
+          if lines:
+            if '已学' in lines[0]:
+              learned_content = ' '.join(lines[1:])
+            else:
+              learned_content = ' '.join(lines)
+            learned_words = learned_content.split()
 
+        learned_chars = set(learned_words)
         new_chars = [character for character in unique_chars if character not in learned_chars]
         with open(output_file, 'w', encoding='utf-8') as result:
           result.write(' '.join(new_chars))
 
-        print(f'成功处理！共提取出 {len(new_chars)} 个未学过的不重复汉字。')
+        learned_words.extend(new_chars)
+        with open(learned_file, 'w', encoding='utf-8') as learned:
+          learned.write(f'已学{len(learned_words)}字\n')
+          learned.write(' '.join(learned_words))
+
+        print(f'成功处理！新增 {len(new_chars)} 个汉字，当前已学 {len(learned_words)} 字。')
         PY
 
     - name: 自动提交并推送到仓库
       run: |
         git config --local user.email "41898282+github-actions[bot]@://github.com"
         git config --local user.name "github-actions[bot]"
-        git add zika.txt
-        # 只有在 zika.txt 发生变化时才提交，防止报错
+        git add zika.txt learned.txt
+        # 只有文件发生变化时才提交，防止报错
         git diff --cached --quiet || (git commit -m "自动更新 zika.txt 汉字字卡文件" && git push)
