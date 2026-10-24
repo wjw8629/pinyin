@@ -65,15 +65,18 @@ jobs:
 
         learned_chars = set(learned_words)
         new_chars = [character for character in unique_chars if character not in learned_chars]
-        with open(output_file, 'w', encoding='utf-8') as result:
-          result.write(' '.join(unique_chars))
+        if new_chars:
+          with open(output_file, 'w', encoding='utf-8') as result:
+            result.write(' '.join(new_chars))
 
-        learned_words.extend(new_chars)
-        with open(learned_file, 'w', encoding='utf-8') as learned:
-          learned.write(f'已学{len(learned_words)}字\n')
-          learned.write(' '.join(learned_words))
+          learned_words.extend(new_chars)
+          with open(learned_file, 'w', encoding='utf-8') as learned:
+            learned.write(f'已学{len(learned_words)}字\n')
+            learned.write(' '.join(learned_words))
 
-        print(f'成功处理！新增 {len(new_chars)} 个汉字，当前已学 {len(learned_words)} 字。')
+          print(f'成功处理！新增 {len(new_chars)} 个汉字，当前已学 {len(learned_words)} 字。')
+        else:
+          print('提取的汉字均已学过，zika.txt 和 learned.txt 保持不变。')
         PY
 
     - name: 自动提交并推送到仓库
