@@ -2,11 +2,6 @@ name: 已学汉字汇总
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main  # 如果你的默认分支是 master，请改成 master
-    paths:
-      - 'zika.txt'  # 只有当 zika.txt 被修改并提交时，才会触发这个自动化
 
 jobs:
   merge-and-commit:
