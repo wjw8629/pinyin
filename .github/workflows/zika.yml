@@ -66,7 +66,7 @@ jobs:
         learned_chars = set(learned_words)
         new_chars = [character for character in unique_chars if character not in learned_chars]
         with open(output_file, 'w', encoding='utf-8') as result:
-          result.write(' '.join(new_chars))
+          result.write(' '.join(unique_chars))
 
         learned_words.extend(new_chars)
         with open(learned_file, 'w', encoding='utf-8') as learned:
